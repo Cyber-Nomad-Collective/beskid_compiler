@@ -1,8 +1,9 @@
-//! Replace the native memory representation of the probe's record and array.
+//! Adapt native CLIF memory operations to the source types of Wasm GC objects.
 //! Scalar instructions and control flow remain in the original CLIF graph.
 #![allow(non_snake_case)]
 
 mod array_requests;
+mod scalar_payload;
 mod spills;
 mod transfers;
 mod contracts;
@@ -435,18 +436,14 @@ pub(crate) fn adapt_with_strings(
     elements.extend(transfer_receivers.values().filter_map(|(_, kind)| match kind {
         Some(ReferenceKind::Array(element)) => Some(*element), _ => None,
     }));
+    let fiber_joins = transfers::fiber_join_layouts(
+        artifact, project, &mut fiberResultLayouts, &mut records, &mut offsets, &mut elements,
+    )?;
     let layout = HeapLayout { arrays: elements, records: records.clone(), observers, events };
 
-    let mut fiberPayloads = HashMap::new();
-    for spawn in &artifact.spawn_artifacts {
-        let handle = *nominalLayouts.get(&spawn.handle_type).ok_or("fiber handle layout missing")?;
-        let payload = *syntheticLayouts.get(&spawn.result_request).ok_or("fiber result layout missing")?;
-        if fiberPayloads.insert(handle, payload).is_some_and(|previous| records[previous] != records[payload]) {
-            return Err("fiber payload layout is ambiguous".into());
-        }
-    }
     for lowered in &mut artifact.functions {
         if dynamic.replace(lowered) { continue; }
+        let join_result = fiber_joins.get(&lowered.name).copied();
         let function = &mut lowered.function;
         let mut descriptors = HashMap::new();
         for (index, array) in arrays.iter().enumerate() {
@@ -546,7 +543,8 @@ pub(crate) fn adapt_with_strings(
             } else if let Some(service) = network::service(name) {
                 service.admits(sig, &artifact.corelib_service_symbols)
             } else if name == crate::fibers::JOIN_VALUE {
-                artifact.corelib_service_symbols.contains(name) && sig.params == [AbiParam::new(I64); 2] && sig.returns == [AbiParam::new(I8)]
+                join_result.is_some() && artifact.corelib_service_symbols.contains(name)
+                    && sig.params == [AbiParam::new(I64); 2] && sig.returns == [AbiParam::new(I8)]
             } else if crate::fibers::admit(name, sig, &artifact.corelib_service_symbols,
                 if matches!(name, crate::fibers::STACK_CHECK | crate::fibers::STACK_OVERFLOW) {
                     artifact.spawn_artifacts.iter().any(|spawn| spawn.trampoline == lowered.name)
@@ -554,7 +552,7 @@ pub(crate) fn adapt_with_strings(
                 if !matches!(name, crate::fibers::STACK_CHECK | crate::fibers::STACK_OVERFLOW | crate::fibers::JOIN_MESSAGE | crate::fibers::SPAWN) { scalarHosts.insert(name.to_owned()); }
                 true
             } else if name == crate::scheduler::ABI_CLEAR {
-                (transfer_slots || !artifact.spawn_artifacts.is_empty())
+                (transfer_slots || join_result.is_some())
                     && sig.params == [AbiParam::new(I64)] && sig.returns == [AbiParam::new(I8)]
             } else if name == crate::scheduler::ABI_INITIALIZE {
                 transfer_slots && sig.params == [AbiParam::new(I64); 4] && sig.returns == [AbiParam::new(I8)]
@@ -629,7 +627,7 @@ pub(crate) fn adapt_with_strings(
             offsets: offsets.clone(),
             signatures: &signatures,
             returnKind: signatures[&lowered.name].1,
-            joinResult: signatures[&lowered.name].0.iter().flatten().filter_map(|kind| match kind { ReferenceKind::Record(record) => fiberPayloads.get(record).copied(), _ => None }).next(),
+            joinResult: join_result,
             joinSlots: HashMap::new(),
             transferSlots: transfers::Slots::default(),
             transferType: transfer_receivers.get(&lowered.name).copied(),
@@ -822,6 +820,7 @@ enum Native {
     StringByte(Value, Value),
     Array(Value, ArrayElement),
     ArrayData(Value, ArrayElement),
+    ArrayByteOffset(Value, Value, ArrayElement),
     ArrayLength(Value, ArrayElement),
     ArraySharing(Value, ArrayElement),
     PacketField(Value, usize, i64),
@@ -1047,9 +1046,30 @@ impl Pass<'_> {
                 };
                 self.eraseResult(inst, source)
             }
+            Load { opcode, arg, offset, .. }
+                if let Some(payload) = self.scalar_payload(arg)
+                    && matches!(opcode, Opcode::Uload8 | Opcode::Sload8 | Opcode::Uload16 | Opcode::Sload16 | Opcode::Uload32 | Opcode::Sload32) =>
+            {
+                self.load_extended_payload(inst, payload, i64::from(i32::from(offset)), opcode)
+            }
+            Store { opcode, args: [value, address], offset, .. }
+                if let Some(payload) = self.scalar_payload(address)
+                    && matches!(opcode, Opcode::Istore8 | Opcode::Istore16 | Opcode::Istore32) =>
+            {
+                if self.source(value).is_some() { return Err("cannot store a reference in a scalar payload"); }
+                let ty = match opcode { Opcode::Istore8 => I8, Opcode::Istore16 => cranelift_codegen::ir::types::I16, _ => I32 };
+                let value = self.rewindBefore(inst).ins().ireduce(ty, value);
+                self.store_payload(inst, payload, i64::from(i32::from(offset)), value)
+            }
             Load { opcode: Opcode::Load, arg, offset, .. } => self.load(inst, arg, i32::from(offset)),
             Store { opcode: Opcode::Store, args: [value, address], offset, .. } => {
                 let offset = i64::from(i32::from(offset));
+                if let Some(payload) = self.scalar_payload(address)
+                    && !(matches!(self.source(address), Some(Element(..))) && offset == 0 && !self.big_endian_payload(inst)
+                        && self.function.dfg.value_type(value) == scalar_type(payload.kind))
+                {
+                    return self.store_payload(inst, payload, offset, value);
+                }
                 let destination = match self.source(address) {
                     Some(Array(handle, element)) if offset == 8 => Some(ArrayLength(handle, element)),
                     Some(Packet(handle, layout)) => Some(PacketField(handle, layout, offset)),
@@ -1100,8 +1120,19 @@ impl Pass<'_> {
                     self.eraseResult(inst, PacketField(handle, record, offset))
                 }
                 Some(ArrayData(handle, element)) => {
+                    if let ArrayElement::Scalar(_) = element
+                        && self.index(offset, element).is_none() && self.source(offset).is_none()
+                    {
+                        return self.eraseResult(inst, ArrayByteOffset(handle, offset, element));
+                    }
                     let index = self.index(offset, element).ok_or("unknown array element address calculation")?;
                     self.eraseResult(inst, Element(handle, index, element))
+                }
+                Some(Element(..) | ArrayByteOffset(..)) if self.source(offset).is_none() => {
+                    let payload = self.scalar_payload(base).ok_or("pointer arithmetic on reference array data")?;
+                    let old = self.payload_offset(inst, payload, 0);
+                    let sum = self.rewindBefore(inst).ins().iadd(old, offset);
+                    self.eraseResult(inst, ArrayByteOffset(payload.handle, sum, ArrayElement::Scalar(payload.kind)))
                 }
                 None if self.source(offset).is_none() => Ok(Keep),
                 _ => Err("unexpected managed address arithmetic"),
@@ -1631,6 +1662,11 @@ impl Pass<'_> {
         use Native::*;
         let result = self.function.dfg.first_result(inst);
         let ty = self.function.dfg.value_type(result);
+        if let Some(payload) = self.scalar_payload(address)
+            && !(matches!(self.source(address), Some(Element(..))) && offset == 0 && !self.big_endian_payload(inst) && ty == scalar_type(payload.kind))
+        {
+            return self.load_payload(inst, payload, i64::from(offset), ty);
+        }
         if ty == I64 && self.dispatch.pointers.contains(&address) {
             let pointer = self.rewindBefore(inst).ins().ireduce(I32, address);
             self.function.dfg.map_inst_values(inst, |arg| if arg == address { pointer } else { arg });

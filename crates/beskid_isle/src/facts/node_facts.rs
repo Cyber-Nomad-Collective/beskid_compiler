@@ -128,6 +128,11 @@ pub trait NodeFacts {
     fn try_return_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
         None
     }
+    /// Whether this target represents different Result instantiations with distinct envelopes,
+    /// even when their ABI field layouts match.
+    fn try_error_requires_exact_instantiation(&self) -> bool {
+        false
+    }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         None
     }

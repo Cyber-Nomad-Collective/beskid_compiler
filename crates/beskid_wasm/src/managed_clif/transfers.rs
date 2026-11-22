@@ -3,6 +3,61 @@
 use super::*;
 use crate::scheduler::{ABI_CLEAR, ABI_INITIALIZE, Transfer};
 
+pub(super) fn fiber_join_layouts(
+    artifact: &CodegenArtifact,
+    project: impl Fn(&SourceSignatureType) -> Result<Option<ReferenceKind>, Box<dyn Error>>,
+    existing: &mut HashMap<SourceSignatureType, usize>,
+    records: &mut Vec<Vec<Field>>,
+    offsets: &mut Vec<Vec<i64>>,
+    arrays: &mut std::collections::BTreeSet<ArrayElement>,
+) -> Result<HashMap<String, usize>, Box<dyn Error>> {
+    let mut joins = HashMap::new();
+    for lowered in &artifact.functions {
+        let joins_fiber = lowered.function.dfg.ext_funcs.values().any(|external| {
+            matches!(&external.name, ExternalName::TestCase(name) if name.raw() == crate::fibers::JOIN_VALUE.as_bytes())
+        });
+        if !joins_fiber {
+            continue;
+        }
+        let signature = artifact.source_signatures.get(&lowered.name).ok_or("fiber join lacks its source signature")?;
+        let [SourceSignatureType::Nominal(receiver)] = signature.parameters.as_ref() else {
+            return Err("fiber join requires a specialized receiver".into());
+        };
+        let [result] = receiver.arguments.as_ref() else {
+            return Err("fiber join receiver lacks its result type".into());
+        };
+        let record = if let Some(&record) = existing.get(result) {
+            record
+        } else {
+            let field = match project(result)? {
+                Some(ReferenceKind::String) => Field::String,
+                Some(ReferenceKind::Record(record)) => Field::Record(record),
+                Some(ReferenceKind::Array(element)) => {
+                    arrays.insert(element);
+                    Field::Array(element)
+                }
+                None => {
+                    let SourceSignatureType::Scalar(ty) = result else {
+                        return Err("fiber result requires a concrete scalar type".into());
+                    };
+                    let kind = if *ty == SemanticTypeId::UNIT { Scalar::I64 }
+                        else { scalar(*ty).ok_or("fiber result has no scalar representation")? };
+                    Field::Scalar(kind)
+                }
+                Some(ReferenceKind::Environment) => return Err("fiber result cannot be an untyped environment".into()),
+            };
+            let offset = artifact.browser_fiber_payload_offset.ok_or("fiber result ABI lacks its value offset")?;
+            let record = records.len();
+            records.push(vec![field]);
+            offsets.push(vec![i64::try_from(offset)?]);
+            existing.insert(result.clone(), record);
+            record
+        };
+        joins.insert(lowered.name.clone(), record);
+    }
+    Ok(joins)
+}
+
 #[derive(Default)]
 pub(super) struct Slots {
     send: HashMap<(StackSlot, Block), (Value, bool)>,

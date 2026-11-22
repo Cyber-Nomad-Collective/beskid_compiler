@@ -174,6 +174,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.try_return_layout_impl(key)
     }
 
+    fn try_error_requires_exact_instantiation(&self) -> bool {
+        self.input.browser_profile
+    }
+
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
         self.index_target_is_string_impl(key)
     }

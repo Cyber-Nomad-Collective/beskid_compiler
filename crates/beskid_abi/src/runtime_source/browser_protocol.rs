@@ -3,6 +3,7 @@ use super::corelib_services::{CorelibService, CorelibServiceAbiType};
 
 pub const HTTP_SOURCE: &str = "Web/WebClient.bd";
 pub const ENTROPY_SOURCE: &str = "Crypto/EntropyPlatform.bd";
+pub const CRYPTO_NATIVE_SOURCE: &str = "Crypto/Native.bd";
 pub const WS_SOURCE: &str = "WebSocket/WsConnection.bd";
 
 pub struct Source {
@@ -14,10 +15,22 @@ pub struct Source {
 
 pub const SOURCES: &[Source] = &[
     Source {
+        logical_path: "Codec/MemPlatform.bd",
+        package: "codec",
+        native: include_str!("../../../../corelib/packages/codec/src/Codec/MemPlatform.bd"),
+        browser: include_str!("../../../../corelib/packages/codec/browser/MemPlatform.bd"),
+    },
+    Source {
         logical_path: ENTROPY_SOURCE,
         package: "crypto",
         native: include_str!("../../../../corelib/packages/crypto/src/Crypto/EntropyPlatform.bd"),
         browser: include_str!("../../../../corelib/packages/crypto/browser/EntropyPlatform.bd"),
+    },
+    Source {
+        logical_path: CRYPTO_NATIVE_SOURCE,
+        package: "crypto",
+        native: include_str!("../../../../corelib/packages/crypto/src/Crypto/Native.bd"),
+        browser: include_str!("../../../../corelib/packages/crypto/browser/Native.bd"),
     },
     Source {
         logical_path: HTTP_SOURCE,

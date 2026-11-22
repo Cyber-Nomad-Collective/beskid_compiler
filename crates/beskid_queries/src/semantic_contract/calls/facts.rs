@@ -843,6 +843,7 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
         enclosing_return: return_identity.abi_type(),
         operand_layout,
         return_layout,
+        same_result_instantiation: operand_identity == return_identity,
         error_managed: error.managed_reference_kind() == ManagedReferenceKind::GcManaged,
     })
 }

@@ -131,7 +131,7 @@ pub(super) struct ExternContractCallees {
 pub(super) fn extern_contract_callees(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
-) -> ExternContractCallees {
+) -> Result<ExternContractCallees, super::contracts::SyntaxModuleEmissionError> {
     let db = input.database();
     let mut callees = HashMap::new();
     for item in items {
@@ -163,11 +163,17 @@ pub(super) fn extern_contract_callees(
             import.library = None;
         }
         result.symbols.insert(callee, import.symbol.clone());
-        if !result.imports.iter().any(|existing: &ExternImport| existing.symbol == import.symbol) {
+        if let Some(existing) = result.imports.iter().find(|existing| existing.symbol == import.symbol) {
+            if input.browser_profile && (existing.optional || import.optional) && existing != &import {
+                return Err(super::contracts::emission_verification(format!(
+                    "browser target has conflicting C extern bindings for `{}`", import.symbol
+                )));
+            }
+        } else {
             result.imports.push(import);
         }
     }
-    result
+    Ok(result)
 }
 
 fn extern_import(import: beskid_queries::ExternContractImport) -> ExternImport {

@@ -97,7 +97,7 @@ fn payload_patterns_are_exhaustive(patterns: &[&MatchPayloadPatternFact]) -> boo
 
 impl IsleContext<'_, '_, '_, '_> {
     /// Propagate the exact error payload through the enclosing Result layout.
-    /// Identical layouts can forward the immutable value; distinct layouts use
+    /// Compatible layouts can forward the immutable value; distinct envelopes use
     /// the same rooted enum construction as an explicit Error constructor.
     pub(super) fn emit_try_dispatch(&mut self, key: AstNodeKey) -> Option<Option<Value>> {
         let fact = self.facts.try_expression_fact(key)?;
@@ -159,7 +159,9 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         self.builder.switch_to_block(error_block);
         self.builder.seal_block(error_block);
-        let error_result = if fact.operand_layout == fact.return_layout {
+        let error_result = if fact.operand_layout == fact.return_layout
+            && (fact.same_result_instantiation || !self.facts.try_error_requires_exact_instantiation())
+        {
             operand
         } else {
             let source_error = layout.variants.get(1)?;

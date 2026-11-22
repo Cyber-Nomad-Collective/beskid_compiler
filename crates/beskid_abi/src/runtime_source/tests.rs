@@ -772,7 +772,20 @@ fn runtime_support_is_source_bound_without_bootstrap_intrinsic_authority() {
     let sources = canonical_runtime_sources();
     let capability = canonical_runtime_intrinsic_capability(&manifest).unwrap();
     let support = canonical_runtime_support_sources();
-    assert_eq!(support.len(), 11);
+    assert_eq!(support.iter().map(|unit| unit.logical_path.as_str()).collect::<Vec<_>>(), [
+        "Core/Collections/Array.bd",
+        "Core/Results/Results.bd",
+        "Core/Bytes/Slice.bd",
+        "Core/String/Core.bd",
+        "Core/String/Utf8.bd",
+        "Core/Collections/Array/ArrayIter.bd",
+        "Core/Hash/Sha256.bd",
+        "Core/String/String.bd",
+        "Core/String/Chars.bd",
+        "Core/String/Ascii.bd",
+        "Core/String/Search.bd",
+        "Core/String/Transform.bd",
+    ]);
     for unit in &support {
         assert!(sources.contains(unit));
         assert!(!capability.authorizes_source(&unit.logical_path));

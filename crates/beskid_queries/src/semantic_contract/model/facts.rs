@@ -122,6 +122,8 @@ pub struct TryExpressionFact {
     pub enclosing_return: SemanticTypeId,
     pub operand_layout: EnumLayoutFact,
     pub return_layout: EnumLayoutFact,
+    /// The applied Result identities agree independently of their physical storage layout.
+    pub same_result_instantiation: bool,
     pub error_managed: bool,
 }
 impl TryExpressionFact {

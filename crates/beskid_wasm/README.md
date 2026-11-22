@@ -1,6 +1,6 @@
 # Beskid browser target
 
-The experimental browser target uses the ordinary project resolver, semantic analysis and ISLE lowering. It emits a WebAssembly module with the configured entrypoint (`Main` by default) and the application’s explicitly named exports. Use an app project and the same installed Corelib that you use for other Beskid builds. [CLI target selection](../beskid_cli/src/commands/build.rs)
+The browser target uses the ordinary project resolver, semantic analysis and ISLE lowering. It emits a WebAssembly module with the configured entrypoint (`Main` by default) and the application’s explicitly named exports. Use an app project and the same installed Corelib that you use for other Beskid builds. [CLI target selection](../beskid_cli/src/commands/build.rs)
 
 ```sh
 beskid build --wasm --project App.bproj --output app.wasm
@@ -9,6 +9,8 @@ beskid build --wasm --project App.bproj --output app.wasm
 The target reuses the compiler’s 64-bit native-profile CLIF and checks it before passing it to `clif2wasm 0.1.0`. It maps supported managed layouts to engine-collected Wasm GC `struct` and `array` objects. A managed invocation owns its root storage. The host preserves the caller’s roots on re-entry and the Wasm suspension wrapper retains the current roots across JSPI. Modules with GC operations or loop polls use the checksummed Binaryen tools in the installed kit. The `--release` flag also uses `wasm-opt`. [Emission and linking](src/lib.rs) · [Managed lowering](src/managed_clif.rs)
 
 Debug builds emit a relative, content-addressed source map alongside the module. Deploy the referenced `beskid-*.wasm.map` file to let a debugger resolve Wasm program counters to Beskid function declarations. The map embeds the compiled sources. In a release build, pass `--source-map` to include it. After inlining, the map identifies the surviving caller.
+
+Inline CLIF can load and store bytes in typed array payloads, including unaligned and explicitly ordered fields. The browser backend maps those operations to Wasm GC array accesses. Crypto keeps its shared Beskid hash and cipher kernels; its optional OpenSSL provider reports unavailable in the standard browser host. Modules using SIMD declare it in `beskid.browser.requiredFeatures`.
 
 ## Browser ABI
 

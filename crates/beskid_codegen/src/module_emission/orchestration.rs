@@ -270,8 +270,8 @@ fn lower_resolved_syntax_program(
     let (corelib_services, browser_coverage) = corelib_service_symbols(input, items, retain_source_types)
         .map_err(|error| emission_verification(format!("Corelib import preflight: {error}")))?;
     symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
-    let extern_contracts = extern_contract_callees(input, items);
-    let corelib_service_symbols = if retain_source_types {
+    let extern_contracts = extern_contract_callees(input, items)?;
+    let mut corelib_service_symbols = if retain_source_types {
         for import in &extern_contracts.imports {
             if beskid_abi::is_runtime_owned_ffi_symbol(&import.symbol) {
                 return Err(emission_verification(format!(
@@ -580,15 +580,6 @@ fn lower_resolved_syntax_program(
     for import in clif_declared_extern_imports(input, &functions, &extern_imports) {
         extern_imports.push(import);
     }
-    emit_optional_extern_support(
-        input,
-        isa,
-        &mut functions,
-        &mut extern_imports,
-        &extern_contracts.availability,
-        &mut context,
-    )?;
-
     let (closure_static_plans, closure_environment_requests, closure_capture_types) =
         collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines, retain_source_types);
     let event_handler_wrapper_required = event_handler_wrapper_required(input, items);
@@ -609,6 +600,16 @@ fn lower_resolved_syntax_program(
     } else {
         HashMap::new()
     };
+    emit_optional_extern_support(
+        input,
+        isa,
+        &mut functions,
+        &mut extern_imports,
+        &extern_contracts.availability,
+        &mut context,
+        &mut corelib_service_symbols,
+        &mut source_signatures,
+    )?;
     if retain_source_types {
         let db = input.database();
         let entries = lambda_trampolines.iter().map(|entry| (&entry.symbol, entry.lambda, entry.specialization.as_ref()))
@@ -835,6 +836,11 @@ fn lower_resolved_syntax_program(
         contract_call_results: context.contract_call_results,
         closure_capture_types,
         spawn_artifacts,
+        browser_fiber_payload_offset: if retain_source_types {
+            input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader").map(|layout| layout.size)
+        } else {
+            None
+        },
         closure_static_plans,
         event_handler_wrapper_required,
         browser_event_layouts,

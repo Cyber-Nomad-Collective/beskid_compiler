@@ -1,8 +1,8 @@
 //! Optional `[Extern(..., Optional:true)]` contracts.
 //!
-//! A host binds an optional symbol that did not resolve to a null address: the JIT binds the
-//! name to null, and AOT declares the symbol as a weak undefined reference. Generated code must
-//! never call such an address, so this pass
+//! Native artifacts test the resolved symbol address: the JIT uses an absent sentinel and AOT
+//! declares a weak undefined reference. The browser profile has no native-library resolver.
+//! Generated code must never call an absent address, so this pass
 //!
 //! - routes every reference to an optional symbol through a generated thunk that loads the
 //!   symbol's address, calls it when it is not null, and otherwise raises the ABI-v5
@@ -10,8 +10,9 @@
 //! - defines each called `bool Available()` query as the conjunction of "address is not null"
 //!   over every C symbol of its contract.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
+use beskid_queries::{SemanticTypeId, SourceItemSignature, SourceSignatureType};
 use cranelift_codegen::ir::{
     AbiParam, ExtFuncData, ExternalName, Function, GlobalValueData, InstBuilder, Signature, TrapCode, UserFuncName,
     condcodes::IntCC, types,
@@ -21,11 +22,12 @@ use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
 use super::contracts::{SyntaxModuleEmissionError, emission_verification};
-use super::imports::AvailabilityQuery;
+use super::imports::{AvailabilityQuery, materialize_string_literal};
 use crate::{CodegenContext, CodegenInput, ExternImport, LoweredFunction};
 
 /// Runtime-kit export that terminates the process with a typed ABI-v5 trap.
 const RUNTIME_TRAP_SYMBOL: &str = "beskid_rt_v5_trap";
+const BROWSER_TRAP_SYMBOL: &str = "beskid_trap_message";
 
 /// Address a host may bind to an optional symbol that did not resolve, instead of null. Some
 /// relocation forms cannot encode a null target (cranelift-jit's x86-64 GOT relocation), so the
@@ -65,11 +67,16 @@ pub(super) fn emit_optional_extern_support(
     extern_imports: &mut Vec<ExternImport>,
     availability: &[AvailabilityQuery],
     context: &mut CodegenContext,
+    corelib_services: &mut HashSet<String>,
+    source_signatures: &mut HashMap<String, SourceItemSignature>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    for query in availability {
-        for (_, member) in &query.members {
-            if !extern_imports.iter().any(|existing| existing.symbol == member.symbol) {
-                extern_imports.push(member.clone());
+    let browser = input.browser_profile;
+    if !browser {
+        for query in availability {
+            for (_, member) in &query.members {
+                if !extern_imports.iter().any(|existing| existing.symbol == member.symbol) {
+                    extern_imports.push(member.clone());
+                }
             }
         }
     }
@@ -78,10 +85,10 @@ pub(super) fn emit_optional_extern_support(
         .filter(|import| import.optional)
         .map(|import| (import.symbol.clone(), import.clone()))
         .collect::<BTreeMap<_, _>>();
-    if optional.is_empty() {
+    if optional.is_empty() && (!browser || availability.is_empty()) {
         return Ok(());
     }
-    if !extern_imports.iter().any(|existing| existing.symbol == OPTIONAL_EXTERN_ABSENT_SYMBOL) {
+    if !browser && !extern_imports.iter().any(|existing| existing.symbol == OPTIONAL_EXTERN_ABSENT_SYMBOL) {
         extern_imports.push(ExternImport {
             symbol: OPTIONAL_EXTERN_ABSENT_SYMBOL.to_owned(),
             abi: Some("C".into()),
@@ -135,11 +142,20 @@ pub(super) fn emit_optional_extern_support(
             "optional extern `{symbol}` from `{}` is unavailable; check `Available()` before calling it",
             import.library.as_deref().unwrap_or("<no library>")
         );
-        let message_symbol = context.intern_string_literal(message.as_bytes());
-        let function = emit_thunk(isa, symbol, signature, trap_code, &message_symbol, message.len())?;
+        let function = if browser {
+            corelib_services.insert(BROWSER_TRAP_SYMBOL.into());
+            source_signatures.insert(thunk_symbol(symbol), browser_thunk_signature(symbol, signature)?);
+            let message = format!("extern_unavailable: {message}");
+            emit_browser_thunk(isa, symbol, signature, trap_code, &message, context)?
+        } else {
+            let message_symbol = context.intern_string_literal(message.as_bytes());
+            emit_thunk(isa, symbol, signature, trap_code, &message_symbol, message.len())?
+        };
         functions.push(LoweredFunction { name: thunk_symbol(symbol), function });
     }
-    if !call_signatures.is_empty() && !extern_imports.iter().any(|existing| existing.symbol == RUNTIME_TRAP_SYMBOL) {
+    if browser {
+        extern_imports.retain(|import| !import.optional);
+    } else if !call_signatures.is_empty() && !extern_imports.iter().any(|existing| existing.symbol == RUNTIME_TRAP_SYMBOL) {
         extern_imports.push(ExternImport {
             symbol: RUNTIME_TRAP_SYMBOL.to_owned(),
             abi: Some("C".into()),
@@ -161,14 +177,22 @@ pub(super) fn emit_optional_extern_support(
             continue;
         };
         let mut members = Vec::with_capacity(query.members.len());
-        for (key, member) in &query.members {
-            let signature = match call_signatures.get(&member.symbol) {
-                Some(signature) => signature.clone(),
-                None => member_signature(input, isa, *key, &member.symbol)?,
-            };
-            members.push((member.symbol.as_str(), signature));
+        if !browser {
+            for (key, member) in &query.members {
+                let signature = match call_signatures.get(&member.symbol) {
+                    Some(signature) => signature.clone(),
+                    None => member_signature(input, isa, *key, &member.symbol)?,
+                };
+                members.push((member.symbol.as_str(), signature));
+            }
         }
-        let function = emit_availability_query(isa, &query.symbol, &query_signature, &members)?;
+        let function = emit_availability_query(isa, &query.symbol, &query_signature, (!browser).then_some(&members))?;
+        if browser {
+            source_signatures.insert(query.symbol.clone(), SourceItemSignature {
+                parameters: [].into(),
+                result: SourceSignatureType::Scalar(SemanticTypeId::BOOL),
+            });
+        }
         functions.push(LoweredFunction { name: query.symbol.clone(), function });
     }
     Ok(())
@@ -195,6 +219,66 @@ fn import(builder: &mut FunctionBuilder<'_>, symbol: &str, signature: Signature)
         colocated: false,
         patchable: false,
     })
+}
+
+/// Compiler-generated absent thunks ignore their C ABI arguments. The checked C slots
+/// are scalars and never carry managed references into the trap body.
+fn browser_thunk_signature(symbol: &str, signature: &Signature) -> Result<SourceItemSignature, SyntaxModuleEmissionError> {
+    let scalar = |param: &AbiParam| {
+        let kind = match param.value_type {
+            types::I8 => SemanticTypeId::I8,
+            types::I16 => SemanticTypeId::I16,
+            types::I32 => SemanticTypeId::I32,
+            types::I64 => SemanticTypeId::I64,
+            types::F32 => SemanticTypeId::F32,
+            types::F64 => SemanticTypeId::F64,
+            other => return Err(emission_verification(format!("optional extern `{symbol}` has an unsupported browser ABI slot {other}"))),
+        };
+        Ok(SourceSignatureType::Scalar(kind))
+    };
+    let result = match signature.returns.as_slice() {
+        [] => SourceSignatureType::Scalar(SemanticTypeId::UNIT),
+        [result] => scalar(result)?,
+        _ => return Err(emission_verification(format!("optional extern `{symbol}` has multiple ABI results"))),
+    };
+    Ok(SourceItemSignature {
+        parameters: signature.params.iter().map(scalar).collect::<Result<_, _>>()?,
+        result,
+    })
+}
+
+/// The browser has no native-library addresses. Keep the checked signature and trap on entry.
+fn emit_browser_thunk(
+    isa: &dyn TargetIsa,
+    symbol: &str,
+    signature: &Signature,
+    trap_code: u8,
+    message: &str,
+    context: &mut CodegenContext,
+) -> Result<Function, SyntaxModuleEmissionError> {
+    let mut function = Function::with_name_signature(UserFuncName::user(0, 0), signature.clone());
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let entry = builder.create_block();
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+        builder.seal_block(entry);
+        let pointer = isa.pointer_type();
+        let message_symbol = context.intern_string_literal(message.as_bytes());
+        let message = materialize_string_literal(&mut builder, message_symbol, message, pointer)
+            .map_err(|error| emission_verification(format!("cannot materialize optional extern trap: {error:?}")))?;
+        let mut trap_signature = Signature::new(isa.default_call_conv());
+        trap_signature.params.push(AbiParam::new(pointer));
+        let trap = import(&mut builder, BROWSER_TRAP_SYMBOL, trap_signature);
+        builder.ins().call(trap, &[message]);
+        builder.ins().trap(TrapCode::unwrap_user(trap_code));
+        builder.finalize(isa.frontend_config());
+    }
+    verify_function(&function, isa.flags()).map_err(|error| {
+        emission_verification(format!("optional extern thunk for `{symbol}` failed verification: {error}"))
+    })?;
+    Ok(function)
 }
 
 /// `symbol`'s thunk: call through the resolved address, or trap when it is null.
@@ -259,7 +343,7 @@ fn emit_availability_query(
     isa: &dyn TargetIsa,
     query_symbol: &str,
     signature: &Signature,
-    members: &[(&str, Signature)],
+    members: Option<&[(&str, Signature)]>,
 ) -> Result<Function, SyntaxModuleEmissionError> {
     let [result] = signature.returns.as_slice() else {
         return Err(emission_verification(format!("availability query `{query_symbol}` must return one bool")));
@@ -275,19 +359,23 @@ fn emit_availability_query(
         let entry = builder.create_block();
         builder.switch_to_block(entry);
         builder.seal_block(entry);
-        let absent = import_absent(&mut builder, isa);
-        let mut available = builder.ins().iconst(types::I8, 1);
-        let mut imported = HashMap::new();
-        for (symbol, member_signature) in members {
-            let target =
-                *imported.entry(*symbol).or_insert_with(|| import(&mut builder, symbol, member_signature.clone()));
-            let address = builder.ins().func_addr(pointer, target);
-            let member_resolved = resolved(&mut builder, isa, absent, address);
-            available = builder.ins().band(available, member_resolved);
-        }
-        let value = match result.value_type {
-            types::I8 => available,
-            wider => builder.ins().uextend(wider, available),
+        let value = if let Some(members) = members {
+            let absent = import_absent(&mut builder, isa);
+            let mut available = builder.ins().iconst(types::I8, 1);
+            let mut imported = HashMap::new();
+            for (symbol, member_signature) in members {
+                let target =
+                    *imported.entry(*symbol).or_insert_with(|| import(&mut builder, symbol, member_signature.clone()));
+                let address = builder.ins().func_addr(pointer, target);
+                let member_resolved = resolved(&mut builder, isa, absent, address);
+                available = builder.ins().band(available, member_resolved);
+            }
+            match result.value_type {
+                types::I8 => available,
+                wider => builder.ins().uextend(wider, available),
+            }
+        } else {
+            builder.ins().iconst(result.value_type, 0)
         };
         builder.ins().return_(&[value]);
         builder.finalize(isa.frontend_config());

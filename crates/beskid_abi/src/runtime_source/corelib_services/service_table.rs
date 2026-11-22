@@ -566,6 +566,11 @@ pub(super) const CORELIB_SERVICES: &[CorelibService] = &[
         symbol: "beskid_trap_message",
         source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: crate::runtime_source::browser_protocol::CRYPTO_NATIVE_SOURCE,
+    },
     CorelibService { name: "__gc_collect", symbol: "gc_collect", source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH },
     CorelibService {
         name: "__panic",

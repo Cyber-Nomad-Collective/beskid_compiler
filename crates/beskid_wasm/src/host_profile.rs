@@ -116,6 +116,9 @@ pub(crate) fn append(
 
     ensure!(internal.len() == internal_exports.len(), "browser artifacts are missing required host helpers");
     let mut required_features = Vec::new();
+    if Validator::new_with_features(features - WasmFeatures::SIMD).validate_all(bytes).is_err() {
+        required_features.push("simd");
+    }
     if Validator::new_with_features(WasmFeatures::WASM2).validate_all(bytes).is_err() {
         required_features.push("wasm-gc");
     }

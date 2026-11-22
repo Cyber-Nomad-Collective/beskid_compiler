@@ -62,7 +62,7 @@ pub(crate) fn validate_indirect(artifact: &CodegenArtifact) -> Result<()> {
                 };
                 ensure!(is_spawn_address || (artifact.contract_boxes_required && opcode == Opcode::CallIndirect) ||
                     artifact.event_handler_wrapper_required || !artifact.browser_event_layouts.is_empty() || !matches!(opcode, Opcode::CallIndirect | Opcode::ReturnCallIndirect | Opcode::TryCallIndirect | Opcode::FuncAddr),
-                    "browser target requires a source-proven closure function value"
+                    "browser target requires a source-proven closure function value in {} ({})", lowered.name, lowered.function.dfg.display_inst(inst)
                 );
             }
         }

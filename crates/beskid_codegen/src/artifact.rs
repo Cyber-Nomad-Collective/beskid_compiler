@@ -107,6 +107,8 @@ pub struct CodegenArtifact {
     pub string_literals: HashMap<String, Vec<u8>>,
     pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
     pub spawn_artifacts: Vec<SpawnArtifact>,
+    /// Native boxed-result value offset reused when a browser function can join without spawning.
+    pub browser_fiber_payload_offset: Option<u64>,
     /// Allocation requests for the hidden environments of exact emitted lambda entries.
     pub closure_environment_requests: HashMap<String, String>,
     pub callable_sites: HashMap<String, HashMap<cranelift_codegen::ir::Inst, beskid_isle::CallableSite>>,

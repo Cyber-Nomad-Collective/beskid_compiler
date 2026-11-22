@@ -225,10 +225,11 @@ pub fn corelib_service_source_descriptor(logical_path: &str) -> Option<CorelibSe
         CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH => {
             (CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH, "network", "Network/Udp/UdpSocket.bd")
         }
-        crate::runtime_source::browser_protocol::ENTROPY_SOURCE => (crate::runtime_source::browser_protocol::ENTROPY_SOURCE, "crypto", "Crypto/EntropyPlatform.bd"),
-        crate::runtime_source::browser_protocol::HTTP_SOURCE => (crate::runtime_source::browser_protocol::HTTP_SOURCE, "web", "Web/WebClient.bd"),
-        crate::runtime_source::browser_protocol::WS_SOURCE => (crate::runtime_source::browser_protocol::WS_SOURCE, "websocket", "WebSocket/WsConnection.bd"),
-        _ => return None,
+        _ => {
+            let source = crate::runtime_source::browser_protocol::SOURCES.iter()
+                .find(|source| source.logical_path == logical_path)?;
+            (source.logical_path, source.package, source.logical_path)
+        }
     };
     let source = canonical_corelib_service_sources()
         .into_iter()

@@ -122,7 +122,7 @@ function readProfile(module) {
   check(features.size === profile.requiredFeatures.length, "Duplicate Beskid browser feature");
   for (const feature of features) {
     // The engine already validated the compiled module's Wasm features.
-    if (feature === "wasm-gc") continue;
+    if (feature === "wasm-gc" || feature === "simd") continue;
     if (feature === "jspi") {
       check(typeof WebAssembly.Suspending === "function" && typeof WebAssembly.promising === "function",
         "Beskid browser module requires WebAssembly JavaScript Promise Integration (JSPI)");

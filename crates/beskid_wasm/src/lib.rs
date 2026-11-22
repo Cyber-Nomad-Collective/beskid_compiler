@@ -16,6 +16,8 @@ mod network;
 mod output;
 mod protocol;
 pub mod root_liveness;
+mod scalar_ops;
+mod vector_shifts;
 mod strings;
 mod suspension;
 mod source_map;
@@ -235,6 +237,10 @@ pub fn build(mut artifact: CodegenArtifact, entry: &str, path: &Path, optimize: 
         root_liveness::release_transient_values(&mut artifact, &layout)?;
     }
     let fiber_frames = fibers::instrument(&mut artifact)?;
+    for lowered in &mut artifact.functions {
+        scalar_ops::expand_bitselect(&mut lowered.function);
+        vector_shifts::expand(&mut lowered.function);
+    }
     if let (Some(evidence), Some(original)) = (&mut qualification, original_clif) {
         let reuse = artifact.functions.iter().filter_map(|lowered| {
             original.get(&lowered.name).map(|before| (lowered.name.clone(), before.compare(&lowered.function)))
@@ -421,6 +427,7 @@ fn run_binaryen(kit: &binaryen::Binaryen, dir: &Path, debug_names: bool, tool: &
             "--mvp-features",
             "--enable-reference-types",
             "--enable-gc",
+            "--enable-simd",
             "--enable-mutable-globals",
             "--enable-bulk-memory",
             "--enable-sign-ext",
