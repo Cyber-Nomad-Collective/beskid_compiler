@@ -1,0 +1,7 @@
+browser_fibers {
+  name = "browser_fibers"
+  version = "0.1.0"
+  root = "src"
+}
+dependency "corelib_concurrency" { source = path path = "../../../../corelib/packages/concurrency" }
+target "Browser" { kind = App entry = "Main.bd" }

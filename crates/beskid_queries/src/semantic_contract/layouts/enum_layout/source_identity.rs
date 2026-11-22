@@ -72,7 +72,7 @@ pub(in crate::semantic_contract) fn enum_layout_for_source_identity(
     let GenericSourceTypeIdentity::Nominal { arguments, .. } = &identity else {
         return Err(SemanticError::unavailable("enum_match"));
     };
-    let declaration = enum_match_source_nominal_declaration(db, call, identity)?;
+    let declaration = source_nominal_declaration(db, call, identity)?;
     let enum_syntax = db
         .syntax_unit(declaration.unit)
         .filter(|syntax| syntax.accepts_key(db, declaration))
@@ -103,7 +103,7 @@ pub(in crate::semantic_contract) fn enum_layout_for_source_identity(
         .map(|(generic, argument)| {
             let shape = match argument {
                 GenericSourceTypeIdentity::Nominal { .. } => {
-                    AggregateFieldShape::Nominal(enum_match_source_nominal_declaration(db, call, argument)?)
+                    AggregateFieldShape::Nominal(source_nominal_declaration(db, call, argument)?)
                 }
                 // The same shapes a written application or a substitution binding yields: a
                 // primitive (string included) is a scalar payload, an array or function a
@@ -131,7 +131,7 @@ pub(in crate::semantic_contract) fn enum_layout_for_source_identity(
 
 /// Recover a proven nominal's declaration using its full identity and current generation.
 /// The terminal spelling only selects candidates; exact identity remains mandatory.
-fn enum_match_source_nominal_declaration(
+pub(in crate::semantic_contract) fn source_nominal_declaration(
     db: &dyn Db,
     key: AstNodeKey,
     identity: &GenericSourceTypeIdentity,

@@ -468,6 +468,11 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             )
             .map(|target| normalized_expression_node(index, target))?;
         let target_node = index.node_at(program, target)?;
+        let inferred_element = || generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key })
+            .map(|element| ArrayIndexElementTemplate::Concrete {
+                abi: element.abi_type(),
+                managed: element.managed_reference_kind(),
+            });
         let Some(target) = target_node
             .of::<beskid_analysis::syntax::PathExpression>()
             .filter(|path| path.path.node.segments.len() == 1)
@@ -504,19 +509,20 @@ pub(in crate::semantic_contract) fn array_index_element_template_tracked(
             ));
         };
         let parent = parent_node(index, declaration)?;
-        if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) {
-            return Some(generic_source_expression_identity(db, AstNodeKey { node: index_node, ..key }).map(
-                |element| ArrayIndexElementTemplate::Concrete {
-                    abi: element.abi_type(),
-                    managed: element.managed_reference_kind(),
-                },
-            ));
+        let binding = index.node_at(program, parent)?;
+        if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::Pattern) ||
+            binding.of::<beskid_analysis::syntax::LetStatement>().is_some_and(|statement| statement.type_annotation.is_none()) ||
+            binding.of::<beskid_analysis::syntax::LambdaParameter>().is_some_and(|parameter| parameter.ty.is_none()) {
+            return Some(inferred_element());
         }
         let array_type = match index.kind(parent)? {
             beskid_analysis::syntax_query::NodeKind::Parameter => index
                 .node_at(program, parent)?
                 .of::<beskid_analysis::syntax::Parameter>()
                 .map(|parameter| &parameter.ty.node),
+            beskid_analysis::syntax_query::NodeKind::LambdaParameter => binding
+                .of::<beskid_analysis::syntax::LambdaParameter>()
+                .and_then(|parameter| parameter.ty.as_ref().map(|annotation| &annotation.node)),
             beskid_analysis::syntax_query::NodeKind::LetStatement => index
                 .node_at(program, parent)?
                 .of::<beskid_analysis::syntax::LetStatement>()

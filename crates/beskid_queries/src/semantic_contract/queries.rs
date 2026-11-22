@@ -531,6 +531,540 @@ pub fn item_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemS
     with_registered_syntax(db, key, item_signature_tracked)
 }
 
+/// A source-level signature type that preserves nominal declaration identity.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum SourceSignatureType {
+    Scalar(SemanticTypeId),
+    Nominal(SourceNominalType),
+    Array(Box<SourceSignatureType>),
+    Function { parameters: Arc<[SourceSignatureType]>, result: Box<SourceSignatureType> },
+}
+
+/// The exact declaration and ordered source arguments of one nominal type instance.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SourceNominalType {
+    pub declaration: AstNodeKey,
+    pub arguments: Arc<[SourceSignatureType]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SourceItemSignature {
+    pub parameters: Arc<[SourceSignatureType]>,
+    pub result: SourceSignatureType,
+}
+
+fn source_signature_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    ty: &beskid_analysis::syntax::Type,
+    resolve_parameter: impl Fn(&str) -> Result<Option<SourceSignatureType>, SemanticError> + Copy,
+) -> Result<SourceSignatureType, SemanticError> {
+    use beskid_analysis::syntax::Type;
+    if let Some(parameter) = generic_parameter_reference_name(ty)
+        && let Some(argument) = resolve_parameter(parameter)?
+    {
+        return Ok(argument);
+    }
+    match ty {
+        Type::Primitive(_) => semantic_type_from_syntax(ty).map(SourceSignatureType::Scalar),
+        Type::Complex(path) => {
+            source_nominal_type(db, key, &path.node, resolve_parameter).map(SourceSignatureType::Nominal)
+        }
+        Type::Array(element) => {
+            Ok(SourceSignatureType::Array(Box::new(source_signature_type(db, key, &element.node, resolve_parameter)?)))
+        }
+        Type::Function { parameters, return_type } => Ok(SourceSignatureType::Function {
+            parameters: parameters.iter().map(|parameter| source_signature_type(db, key, &parameter.node, resolve_parameter)).collect::<Result<Arc<[_]>, _>>()?,
+            result: Box::new(source_signature_type(db, key, &return_type.node, resolve_parameter)?),
+        }),
+        Type::This => source_signature_type(
+            db,
+            key,
+            &method_this_type(db, key).ok_or_else(|| SemanticError::unavailable("source_item_signature"))?,
+            resolve_parameter,
+        ),
+        _ => Err(SemanticError::unavailable("source_item_signature")),
+    }
+}
+
+fn source_nominal_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+    resolve_parameter: impl Fn(&str) -> Result<Option<SourceSignatureType>, SemanticError> + Copy,
+) -> Result<SourceNominalType, SemanticError> {
+    let declaration =
+        resolve_type_declaration(db, key, path).or_else(|| super::contracts::resolve_contract_head(db, key, path)).ok_or_else(|| SemanticError::unavailable("source_nominal_type"))?;
+    let arguments = path
+        .segments
+        .iter()
+        .flat_map(|segment| segment.node.type_args.iter())
+        .map(|argument| source_signature_type(db, key, &argument.node, resolve_parameter))
+        .collect::<Result<Arc<[_]>, _>>()?;
+    Ok(SourceNominalType { declaration, arguments })
+}
+
+fn source_specialization_binding(
+    db: &dyn Db,
+    key: AstNodeKey,
+    parameter: &str,
+    substitutions: &[GenericSubstitution],
+) -> Result<Option<SourceSignatureType>, SemanticError> {
+    substitutions
+        .iter()
+        .find(|binding| binding.parameter.as_ref() == parameter)
+        .map(|binding| source_signature_substitution(db, key, binding.source_identity()))
+        .transpose()
+}
+
+fn source_signature_substitution(
+    db: &dyn Db,
+    key: AstNodeKey,
+    ty: &GenericSourceTypeIdentity,
+) -> Result<SourceSignatureType, SemanticError> {
+    match ty {
+        GenericSourceTypeIdentity::Abi(ty) => Ok(SourceSignatureType::Scalar(*ty)),
+        GenericSourceTypeIdentity::Nominal { arguments, .. } | GenericSourceTypeIdentity::Contract { arguments, .. } => {
+            let declaration = match ty {
+                GenericSourceTypeIdentity::Contract { qualified_name, .. } => super::contracts::contract_declaration_for_identity(db, key, qualified_name).ok_or_else(|| SemanticError::unavailable("source_signature_contract"))?,
+                _ => super::layouts::source_nominal_declaration(db, key, ty)?,
+            };
+            let arguments = arguments
+                .iter()
+                .map(|argument| source_signature_substitution(db, key, argument))
+                .collect::<Result<Arc<[_]>, _>>()?;
+            Ok(SourceSignatureType::Nominal(SourceNominalType { declaration, arguments }))
+        }
+        GenericSourceTypeIdentity::Array(element) => {
+            Ok(SourceSignatureType::Array(Box::new(source_signature_substitution(db, key, element)?)))
+        }
+        GenericSourceTypeIdentity::Function { parameters, result } => Ok(SourceSignatureType::Function {
+            parameters: parameters.iter().map(|parameter| source_signature_substitution(db, key, parameter)).collect::<Result<Arc<[_]>, _>>()?,
+            result: Box::new(source_signature_substitution(db, key, result)?),
+        }),
+    }
+}
+
+impl SourceNominalType {
+    pub fn matches_specialization(&self, db: &dyn Db, applied: Option<&AggregateSpecialization>) -> bool {
+        let arguments = applied.map(AggregateSpecialization::arguments).unwrap_or_default();
+        arguments.len() == self.arguments.len() && arguments.iter().zip(self.arguments.iter()).all(|(generic, expected)| {
+            source_signature_substitution(db, self.declaration, generic).is_ok_and(|resolved| &resolved == expected)
+        })
+    }
+}
+
+/// The exact two value arguments to an observation callback at a lowered write.
+pub fn source_observer_signature(
+    db: &dyn Db,
+    site: AstNodeKey,
+    property: AstNodeKey,
+    receiver: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceItemSignature> {
+    let Some(identity) = super::properties::observation_property_value_identity(db, site, property, receiver, enclosing)? else {
+        return Ok(None);
+    };
+    let ty = source_signature_substitution(db, property, &identity)?;
+    Ok(Some(SourceItemSignature {
+        parameters: Arc::from([ty.clone(), ty]),
+        result: SourceSignatureType::Scalar(SemanticTypeId::UNIT),
+    }))
+}
+
+/// Source value type of a contract property read, including an implicit compound-assignment read.
+pub fn source_contract_property_value(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SourceSignatureType> {
+    contract_property_access(db, key)?.map(|property| {
+        source_signature_substitution(db, property.signature, &property.identity)
+    }).transpose()
+}
+
+/// Source result at an emitted indirect contract call, including enclosing type arguments.
+pub fn source_contract_call_result(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceSignatureType> {
+    if let Some(property) = contract_property_access(db, key)? {
+        if property.value.is_some() {
+            return Ok(Some(SourceSignatureType::Scalar(SemanticTypeId::UNIT)));
+        }
+        return source_signature_substitution(db, property.signature, &property.identity).map(Some);
+    }
+    let Some(dispatch) = contract_dispatch(db, key, enclosing)? else { return Ok(None) };
+    let Some(receiver) = call_arguments(db, key)?.and_then(|args| args.first().copied()) else { return Ok(None) };
+    let Some(GenericSourceTypeIdentity::Contract { arguments, .. }) =
+        contract_values::receiver_identity(db, key, receiver, enclosing) else { return Ok(None) };
+    let declaration = dispatch.signature_node;
+    with_registered_syntax(db, declaration, |db, syntax, _| {
+        let program = syntax.expanded_program(db);
+        let index = syntax.syntax_index(db);
+        let method = index.node_at(program, declaration.node)
+            .and_then(|node| node.of::<beskid_analysis::syntax::ContractMethodSignature>())
+            .ok_or_else(|| SemanticError::unavailable("source_contract_call_result"))?;
+        let contract = index.node_at(program, dispatch.contract.node)
+            .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
+            .ok_or_else(|| SemanticError::unavailable("source_contract_call_result"))?;
+        if contract.generics.len() != arguments.len() {
+            return Err(SemanticError::unavailable("source_contract_call_result"));
+        }
+        let Some(result) = &method.return_type else {
+            return Ok(Some(SourceSignatureType::Scalar(SemanticTypeId::UNIT)));
+        };
+        source_signature_type(db, declaration, &result.node, |name| {
+            contract.generics.iter().zip(arguments.iter())
+                .find(|(parameter, _)| parameter.node.name == name)
+                .map(|(_, argument)| source_signature_substitution(db, key, argument)).transpose()
+        }).map(Some)
+    })
+}
+
+/// The exact source callable shape of a lambda, with its enclosing generic bindings.
+pub fn source_lambda_signature(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceItemSignature> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |program, index, node| {
+            node.of::<beskid_analysis::syntax::LambdaExpression>()?;
+            Some(lambda_identity(db, program, index, key, enclosing).and_then(|identity| {
+                source_callable_identity(db, key, identity)
+            }))
+        })?.transpose()
+    })
+}
+
+/// The source callable shape of an indirect closure call, excluding its hidden environment.
+pub fn source_function_value_signature(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceItemSignature> {
+    let call = match enclosing {
+        Some(instance) => function_value_call_specialization(db, key, instance)?,
+        None => function_value_call(db, key)?,
+    };
+    call.map(|call| {
+        let identity = specialized_source_expression_identity(db, call.callee, enclosing)?;
+        source_callable_identity(db, call.callee, identity)
+    }).transpose()
+}
+
+/// Retain an event's declared delegate signature for each emitted handler invocation.
+pub fn source_event_call_signature(
+    db: &dyn Db,
+    site: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceItemSignature> {
+    let Some(operation) = event_operation(db, site)? else { return Ok(None); };
+    let key = operation.field;
+    let substitutions = enclosing.map_or(&[][..], |instance| instance.substitutions.as_ref());
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |_program, _index, node| {
+            let field = node.of::<beskid_analysis::syntax::Field>()?;
+            Some(source_signature_type(db, key, &field.ty.node, |name| {
+                source_specialization_binding(db, site, name, substitutions)
+            }).and_then(|declared| {
+                let SourceSignatureType::Function { parameters, result } = declared else {
+                    return Err(SemanticError::unavailable("source_event_call_signature"));
+                };
+                Ok(SourceItemSignature { parameters, result: *result })
+            }))
+        })?.transpose()
+    })
+}
+
+fn source_callable_identity(
+    db: &dyn Db,
+    key: AstNodeKey,
+    identity: GenericSourceTypeIdentity,
+) -> Result<SourceItemSignature, SemanticError> {
+    let GenericSourceTypeIdentity::Function { parameters, result } = identity else {
+        return Err(SemanticError::unavailable("source_callable_identity"));
+    };
+    Ok(SourceItemSignature {
+        parameters: parameters.iter().map(|ty| source_signature_substitution(db, key, ty)).collect::<Result<Arc<[_]>, _>>()?,
+        result: source_signature_substitution(db, key, &result)?,
+    })
+}
+
+/// Retain the exact source type of a captured lexical declaration.
+pub fn source_capture_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceSignatureType> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |program, index, _| {
+            let identity = enclosing.and_then(|item| contracts::specialized_local_declaration_identity(db, key, item))
+                .unwrap_or_else(|| generic_source_local_identity(db, program, index, key, key.node));
+            Some(identity.and_then(|identity| source_signature_substitution(db, key, &identity)))
+        })?.transpose()
+    })
+}
+
+#[salsa::tracked(persist)]
+fn source_item_signature_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+    specialization: Option<GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceItemSignature> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        use beskid_analysis::syntax::{FunctionDefinition, MethodDefinition, TestDefinition};
+        let (parameters, receiver, return_type) = if let Some(function) = node.of::<FunctionDefinition>() {
+            if !function.generics.is_empty() && specialization.is_none() {
+                return None;
+            }
+            (&function.parameters, None, function.return_type.as_ref())
+        } else if let Some(method) = node.of::<MethodDefinition>() {
+            (&method.parameters, Some(&method.receiver_type.node), method.return_type.as_ref())
+        } else if let Some(method) = node.of::<beskid_analysis::syntax::ContractMethodSignature>()
+            && extern_contract_import_for_declaration(db, key).is_some()
+        {
+            // A compiler-generated extern-contract bridge uses the declared parameters directly.
+            (&method.parameters, None, method.return_type.as_ref())
+        } else if node.of::<TestDefinition>().is_some() {
+            return Some(Ok(SourceItemSignature {
+                parameters: Arc::from([]),
+                result: SourceSignatureType::Scalar(SemanticTypeId::UNIT),
+            }));
+        } else {
+            return None;
+        };
+        Some((|| {
+            let substitutions = specialization.as_ref().map(|instance| instance.substitutions.as_ref()).unwrap_or(&[]);
+            let resolve_parameter = |parameter: &str| source_specialization_binding(db, key, parameter, substitutions);
+            let mut projected = Vec::with_capacity(parameters.len() + usize::from(receiver.is_some()));
+            if let Some(receiver) = receiver {
+                projected.push(source_signature_type(db, key, receiver, resolve_parameter)?);
+            }
+            for (position, parameter) in parameters.iter().enumerate() {
+                let witness = specialization.as_ref().and_then(|instance| {
+                    instance.contract_witnesses.iter().find(|witness| witness.position as usize == position)
+                });
+                let ty = match witness {
+                    Some(witness) => source_signature_substitution(db, key, &witness.source_identity)?,
+                    None => source_signature_type(db, key, &parameter.node.ty.node, resolve_parameter)?,
+                };
+                projected.push(ty);
+            }
+            let result = match return_type {
+                Some(ty) => source_signature_type(db, key, &ty.node, resolve_parameter)?,
+                None => SourceSignatureType::Scalar(SemanticTypeId::UNIT),
+            };
+            Ok(SourceItemSignature { parameters: projected.into(), result })
+        })())
+    })?
+    .transpose()
+}
+
+/// Return source signature types resolved against exact current-generation declarations.
+pub fn source_item_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceItemSignature> {
+    with_registered_syntax(db, key, |db, syntax, key| source_item_signature_tracked(db, syntax, key, None))
+}
+
+/// Project an emitted generic instance's source types using its proven substitutions.
+pub fn source_specialized_item_signature(
+    db: &dyn Db,
+    instance: &GenericSpecializationInstance,
+) -> SemanticQueryResult<SourceItemSignature> {
+    with_registered_syntax(db, instance.declaration, |db, syntax, key| {
+        source_item_signature_tracked(db, syntax, key, Some(instance.clone()))
+    })
+}
+
+/// Return declaration-ordered source value fields for one exact record instance.
+#[salsa::tracked(persist)]
+fn source_record_fields_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+    arguments: Arc<[SourceSignatureType]>,
+) -> SemanticQueryResult<Arc<[SourceSignatureType]>> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        let record = node.of::<beskid_analysis::syntax::TypeDefinition>()?;
+        if record.generics.len() != arguments.len() {
+            return None;
+        }
+        let resolve_parameter = |name: &str| {
+            Ok(record
+                .generics
+                .iter()
+                .zip(arguments.iter())
+                .find(|(parameter, _)| parameter.node.name == name)
+                .map(|(_, argument)| argument.clone()))
+        };
+        Some(
+            record
+                .fields
+                .iter()
+                .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+                .map(|field| source_signature_type(db, key, &field.node.ty.node, resolve_parameter))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Into::into),
+        )
+    })?
+    .transpose()
+}
+
+pub fn source_record_fields(
+    db: &dyn Db,
+    record: &SourceNominalType,
+) -> SemanticQueryResult<Arc<[SourceSignatureType]>> {
+    with_registered_syntax(db, record.declaration, |db, syntax, key| {
+        source_record_fields_tracked(db, syntax, key, Arc::clone(&record.arguments))
+    })
+}
+
+/// Resolve the exact declared type of a composition-injected field for managed layout lowering.
+pub fn source_injected_field_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceSignatureType> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |_, _, node| {
+            use beskid_analysis::syntax::{Field, FieldKind};
+            let field = node.of::<Field>()?;
+            (field.kind == FieldKind::Injected).then(|| source_signature_type(db, key, &field.ty.node, |_| Ok(None)))
+        })?.transpose()
+    })
+}
+
+/// Resolve every variant payload against the exact arguments of its enum instance.
+pub fn source_enum_variant_fields(
+    db: &dyn Db,
+    nominal: &SourceNominalType,
+) -> SemanticQueryResult<Vec<Vec<SourceSignatureType>>> {
+    with_registered_syntax(db, nominal.declaration, |db, syntax, key| {
+        with_node(db, syntax, key, |_program, _index, node| {
+            let definition = node.of::<beskid_analysis::syntax::EnumDefinition>()?;
+            if definition.generics.len() != nominal.arguments.len() {
+                return None;
+            }
+            let resolve = |name: &str| {
+                Ok(definition.generics.iter().zip(nominal.arguments.iter())
+                    .find(|(parameter, _)| parameter.node.name == name)
+                    .map(|(_, argument)| argument.clone()))
+            };
+            Some(definition.variants.iter().map(|variant| {
+                variant.node.fields.iter().map(|field| source_signature_type(db, key, &field.node.ty.node, resolve)).collect()
+            }).collect())
+        })?.transpose()
+    })
+}
+
+/// Retain the element identity that a pointer-shaped array allocation would otherwise erase.
+pub fn source_array_element_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    specialization: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceSignatureType> {
+    let substitutions = specialization.map(|item| item.substitutions.as_ref()).unwrap_or_default();
+    if let Some(allocation) = typed_array_allocation(db, key)? {
+        return source_specialization_binding(db, key, &allocation.element_parameter, substitutions);
+    }
+    with_registered_syntax(db, key, |db, syntax, key| {
+        with_node(db, syntax, key, |program, index, node| {
+            let array = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>()?;
+            Some((|| {
+                if let Ok(Some(expected)) = expected_type_in(db, key, specialization)
+                    && let Some(element) = expected.array_element_identity()
+                {
+                    return source_signature_substitution(db, key, element).map(Some);
+                }
+                let mut element_type = None;
+                for element in &array.elements {
+                    let node = index
+                        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(element))
+                        .ok_or_else(|| SemanticError::unavailable("source_array_element_type"))?;
+                    let key = AstNodeKey { node, ..key };
+                    let identity = contracts::specialized_source_expression_identity(db, key, specialization)?;
+                    let candidate = source_signature_substitution(db, key, &identity)?;
+                    if element_type.as_ref().is_some_and(|ty| *ty != candidate) {
+                        return Err(SemanticError::unavailable("source_array_element_type"));
+                    }
+                    element_type = Some(candidate);
+                }
+                if element_type.is_some() {
+                    return Ok(element_type);
+                }
+                let enclosing = parent_node(index, key.node).and_then(|parent| parent_node(index, parent));
+                let local = enclosing
+                    .and_then(|node| index.node_at(program, node))
+                    .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>());
+                let Some(beskid_analysis::syntax::Type::Array(element)) =
+                    local.and_then(|local| local.type_annotation.as_ref()).map(|ty| &ty.node)
+                else {
+                    return Ok(None);
+                };
+                source_signature_type(db, key, &element.node, |parameter| {
+                    source_specialization_binding(db, key, parameter, substitutions)
+                })
+                .map(Some)
+            })())
+        })?
+        .transpose()
+        .map(Option::flatten)
+    })
+}
+
+#[salsa::tracked(persist)]
+fn source_aggregate_literal_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+    specialization: Option<GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceNominalType> {
+    with_node(db, syntax, key, |program, index, node| {
+        use beskid_analysis::syntax::{EnumConstructorExpression, StructLiteralExpression};
+        if let Some(literal) = node.of::<StructLiteralExpression>() {
+            let substitutions = specialization.as_ref().map(|s| s.substitutions.as_ref()).unwrap_or_default();
+            return Some(source_nominal_type(db, key, &literal.path.node, |parameter| {
+                source_specialization_binding(db, key, parameter, substitutions)
+            }));
+        }
+        // Both postfix propagation and scoped disposal can return an error from the enclosing
+        // function. Its Result can have a different success type from the operand.
+        if node.of::<beskid_analysis::syntax::TryExpression>().is_some()
+            || node.of::<beskid_analysis::syntax::ScopedUseStatement>().is_some()
+        {
+            return Some((|| {
+                let callable = super::locals::enclosing_executable_callable(index, key.node)
+                    .and_then(|id| index.node_at(program, id))
+                    .and_then(super::abi::declared_callable_return_type)
+                    .ok_or_else(|| SemanticError::unavailable("source_aggregate_literal_type"))?;
+                let substitutions = specialization.as_ref().map(|s| s.substitutions.as_ref()).unwrap_or_default();
+                match source_signature_type(db, key, &callable.node, |name| source_specialization_binding(db, key, name, substitutions))? {
+                    SourceSignatureType::Nominal(nominal) => Ok(nominal),
+                    _ => Err(SemanticError::unavailable("source_aggregate_literal_type")),
+                }
+            })());
+        }
+        let constructor = node.of::<EnumConstructorExpression>()?;
+        Some((|| {
+            let identity = applied_enum_constructor_identity(db, key, constructor, specialization.as_ref())?;
+            match source_signature_substitution(db, key, &identity)? {
+                SourceSignatureType::Nominal(nominal) => Ok(nominal),
+                _ => Err(SemanticError::unavailable("source_aggregate_literal_type")),
+            }
+        })())
+    })?
+    .transpose()
+}
+
+/// Bind a record or enum allocation to its nominal instance in the same specialization as its body.
+pub fn source_aggregate_literal_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    specialization: Option<&GenericSpecializationInstance>,
+) -> SemanticQueryResult<SourceNominalType> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        source_aggregate_literal_type_tracked(db, syntax, key, specialization.cloned())
+    })
+}
+
 /// Return the scalar ABI representation signature proven by current source syntax.
 pub fn item_abi_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
     with_registered_syntax(db, key, item_abi_signature_tracked)
@@ -823,6 +1357,13 @@ pub fn move_expression_form(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
 
 pub fn spawn_handle_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnHandleType> {
     with_registered_syntax(db, key, spawn_handle_type_tracked)
+}
+
+/// Exact source Fiber instance and payload for a validated spawn.
+pub fn source_spawn_handle_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceNominalType> {
+    let Some(handle) = spawn_handle_type(db, key)? else { return Ok(None); };
+    let payload = source_signature_substitution(db, key, handle.payload.source_identity())?;
+    Ok(Some(SourceNominalType { declaration: handle.declaration, arguments: vec![payload].into() }))
 }
 
 /// Return source-only spawn-entry validation for the current syntax generation.

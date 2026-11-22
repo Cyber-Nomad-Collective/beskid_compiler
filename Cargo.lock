@@ -475,7 +475,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_cli"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "argfile",
@@ -496,6 +496,7 @@ dependencies = [
  "beskid_tests_mod_host",
  "beskid_tools",
  "beskid_up",
+ "beskid_wasm",
  "bsol",
  "bsol-beskid-bridge",
  "cargo-cross",
@@ -627,7 +628,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_lsp"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "beskid_analysis",
@@ -990,7 +991,7 @@ dependencies = [
 
 [[package]]
 name = "beskid_up"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "beskid_abi",
  "cargo-cross",
@@ -1004,6 +1005,24 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "beskid_wasm"
+version = "0.7.1"
+dependencies = [
+ "anyhow",
+ "beskid_abi",
+ "beskid_codegen",
+ "beskid_queries",
+ "clif2wasm",
+ "cranelift-codegen",
+ "cranelift-module",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "wasm-encoder",
+ "wasmparser 0.248.0",
 ]
 
 [[package]]
@@ -1326,6 +1345,27 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "clif2wasm"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49e192c8b4871a17fe1cc09043c660e7da2739149b229036fb878dc89960b514"
+dependencies = [
+ "anyhow",
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-module",
+ "fxhash",
+ "log",
+ "miette",
+ "smallvec",
+ "target-lexicon",
+ "thiserror",
+ "wasm-encoder",
+ "wasmparser 0.248.0",
+ "wasmparser 0.261.0",
+]
 
 [[package]]
 name = "cmake"
@@ -2296,6 +2336,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2448,6 +2497,8 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -2833,6 +2884,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -3031,6 +3084,12 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
  "spin",
 ]
+
+[[package]]
+name = "leb128fmt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
@@ -5859,6 +5918,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-encoder"
+version = "0.248.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac92cf547bc18d27ecc521015c08c353b4f18b84ab388bb6d1b6b682c620d9b6"
+dependencies = [
+ "leb128fmt",
+ "wasmparser 0.248.0",
+]
+
+[[package]]
 name = "wasm-streams"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5882,6 +5951,32 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.248.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa4439c5eee9df71ee0c6efb37f63b1fcb1fec38f85f5142c54e7ed05d33091a"
+dependencies = [
+ "bitflags 2.13.1",
+ "hashbrown 0.17.1",
+ "indexmap",
+ "semver",
+ "serde",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.261.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f20f20e44f7e8aeb6744823ea9d869ede51e51be4fdaedede2852282e54d2d8"
+dependencies = [
+ "bitflags 2.13.1",
+ "hashbrown 0.17.1",
+ "indexmap",
+ "semver",
+ "serde",
 ]
 
 [[package]]

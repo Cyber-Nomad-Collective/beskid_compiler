@@ -1,0 +1,23 @@
+use Testing.Assert;
+
+type Counter { prop i32 Count = 0; }
+type Trace { i32 changes; }
+
+i32 Main()
+{
+    Counter counter = Counter {};
+    Trace trace = Trace { changes: 0 };
+    mut i32 registered = 0;
+    while registered < 4096 {
+        observe counter.Count (previous, next) => {
+            trace.changes += next - previous;
+        };
+        registered += 1;
+    }
+    Assert.CollectGarbage();
+    counter.Count = 1;
+    Assert.CollectGarbage();
+    counter.Count = 2;
+    if trace.changes != 8192 { return 1; }
+    return 42;
+}

@@ -69,11 +69,12 @@ pub(super) fn emit_module_items(
     items: &[ResolvedSyntaxModuleItem],
     symbols: &HashMap<DirectCallee, String>,
     context: &mut CodegenContext,
+    retain_source_types: bool,
 ) -> Result<Vec<LoweredFunction>, SyntaxModuleEmissionError> {
     let pool = Mutex::new(context);
     let workers = worker_count(items.len());
     if workers <= 1 {
-        return items.iter().map(|item| emit_module_item(input, isa, item, items, symbols, &pool)).collect();
+        return items.iter().map(|item| emit_module_item(input, isa, item, items, symbols, &pool, retain_source_types)).collect();
     }
     let next = AtomicUsize::new(0);
     let first_error = AtomicUsize::new(usize::MAX);
@@ -100,7 +101,7 @@ pub(super) fn emit_module_items(
                         if index >= items.len() || index > first_error.load(Ordering::Relaxed) {
                             break;
                         }
-                        let result = emit_module_item(&local, isa, &items[index], items, symbols, pool);
+                        let result = emit_module_item(&local, isa, &items[index], items, symbols, pool, retain_source_types);
                         if result.is_err() {
                             first_error.fetch_min(index, Ordering::Relaxed);
                         }
@@ -142,6 +143,7 @@ fn emit_module_item(
     items: &[ResolvedSyntaxModuleItem],
     symbols: &HashMap<DirectCallee, String>,
     pool: &Mutex<&mut CodegenContext>,
+    retain_source_types: bool,
 ) -> Result<LoweredFunction, SyntaxModuleEmissionError> {
     let lowered = |function| LoweredFunction { name: item.symbol.clone(), function };
     let mut strings = SharedStringInterner { pool, pointer_type: isa.pointer_type() };
@@ -174,7 +176,7 @@ fn emit_module_item(
             item.symbol
         )
     });
-    let mut importer = ArtifactCallImporter { symbols };
+    let mut importer = ArtifactCallImporter::new(symbols, retain_source_types);
     let function = match &item.specialization {
         Some(specialization) => emit_isle_item_with_services_specialization(
             input,
@@ -204,5 +206,13 @@ fn emit_module_item(
             started.elapsed().as_millis()
         )
     });
+    if retain_source_types {
+        importer.retain_calls(
+            input.database(),
+            &item.symbol,
+            item.specialization.as_ref(),
+            &mut pool.lock().expect("artifact context"),
+        );
+    }
     Ok(lowered(function))
 }

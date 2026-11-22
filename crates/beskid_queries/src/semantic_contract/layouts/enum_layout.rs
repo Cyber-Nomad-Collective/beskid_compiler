@@ -31,5 +31,5 @@ use scrutinee::{
 pub(in crate::semantic_contract) use scrutinee::{
     enum_match_scrutinee_layout, enum_pattern_targets_declaration, ungrouped_scrutinee,
 };
-pub(in crate::semantic_contract) use source_identity::enum_layout_for_source_identity;
+pub(in crate::semantic_contract) use source_identity::{enum_layout_for_source_identity, source_nominal_declaration};
 use source_identity::{enum_layout_for_expression_result, instantiated_enum_layout_for_path_in_environment};

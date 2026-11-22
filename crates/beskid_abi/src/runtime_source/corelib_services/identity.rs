@@ -28,7 +28,7 @@ use super::super::sources::{
     CANONICAL_SERIALIZATION_READER_SOURCE_PATH, canonical_corelib_deadline_source,
     canonical_corelib_private_field_sources, canonical_corelib_service_sources,
 };
-use super::service_table::{CORELIB_SERVICES, CorelibService};
+use super::service_table::{CorelibService, corelib_services};
 
 /// Filesystem-independent authority descriptor for one compiler-owned Corelib service unit.
 ///
@@ -225,6 +225,9 @@ pub fn corelib_service_source_descriptor(logical_path: &str) -> Option<CorelibSe
         CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH => {
             (CANONICAL_NETWORK_UDP_SOCKET_SOURCE_PATH, "network", "Network/Udp/UdpSocket.bd")
         }
+        crate::runtime_source::browser_protocol::ENTROPY_SOURCE => (crate::runtime_source::browser_protocol::ENTROPY_SOURCE, "crypto", "Crypto/EntropyPlatform.bd"),
+        crate::runtime_source::browser_protocol::HTTP_SOURCE => (crate::runtime_source::browser_protocol::HTTP_SOURCE, "web", "Web/WebClient.bd"),
+        crate::runtime_source::browser_protocol::WS_SOURCE => (crate::runtime_source::browser_protocol::WS_SOURCE, "websocket", "WebSocket/WsConnection.bd"),
         _ => return None,
     };
     let source = canonical_corelib_service_sources()
@@ -232,7 +235,7 @@ pub fn corelib_service_source_descriptor(logical_path: &str) -> Option<CorelibSe
         .chain(std::iter::once(canonical_corelib_deadline_source()))
         .chain(canonical_corelib_private_field_sources())
         .find(|source| source.logical_path == logical_path)?;
-    let services = CORELIB_SERVICES.iter().copied().filter(|service| service.source_path == logical_path).collect();
+    let services = corelib_services().filter(|service| service.source_path == logical_path).collect();
     Some(CorelibServiceSourceDescriptor {
         logical_path,
         package,

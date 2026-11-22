@@ -5,7 +5,7 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{
-    AbiParam, Block, ExtFuncData, FuncRef, MemFlagsData, Signature, StackSlotData, StackSlotKind, TrapCode,
+    AbiParam, Block, ExtFuncData, FuncRef, Inst, MemFlagsData, Signature, StackSlotData, StackSlotKind, TrapCode,
     Type, Value,
 };
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
@@ -132,6 +132,19 @@ pub trait CallImporter {
         callee: DirectCallee,
         signature: &Signature,
     ) -> Result<FuncRef, CallImportError>;
+
+    fn record_callable_site(&mut self, _instruction: Inst, _site: CallableSite) {}
+}
+
+/// Source authority for a generated indirect call or closure code address in CLIF.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallableSite {
+    Closure(AstNodeKey),
+    Event(AstNodeKey),
+    Observer { site: AstNodeKey, property: AstNodeKey, receiver: AstNodeKey },
+    Contract(AstNodeKey),
+    ContractPropertyValue(AstNodeKey),
+    ClosureCodeAddress(AstNodeKey),
 }
 
 /// Thin host for generated ISLE selection and stock CLIF instruction construction.
@@ -156,6 +169,12 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
 }
 
 impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
+    fn record_callable_site(&mut self, instruction: Inst, site: CallableSite) {
+        if let Some(importer) = &mut self.call_importer {
+            importer.record_callable_site(instruction, site);
+        }
+    }
+
     pub fn new(
         builder: &'builder mut FunctionBuilder<'function>,
         facts: &'facts dyn NodeFacts,

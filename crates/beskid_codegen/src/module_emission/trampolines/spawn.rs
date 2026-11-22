@@ -250,6 +250,7 @@ pub(in crate::module_emission) fn spawn_result_plan(
             Vec::new()
         };
     Ok(crate::aggregate_static::AggregateStaticPlan {
+        observer_slot: None,
         descriptor_flags: 0,
         descriptor_getter: None,
         literal: spawn,

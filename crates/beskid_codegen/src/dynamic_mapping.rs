@@ -19,7 +19,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 /// Runtime nesting bound of one transform. Cyclic source values fail closed at this depth.
-const MAX_RUNTIME_DEPTH: u32 = 256;
+pub const MAX_RUNTIME_DEPTH: u32 = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledDynamicMapping {
@@ -49,8 +49,10 @@ pub struct ApprovedDynamicMapping {
     signature: Vec<u8>,
     digest: [u8; 32],
     native: String,
+    plan: DynamicMappingPlan,
 }
 impl ApprovedDynamicMapping {
+    pub fn plan(&self) -> &DynamicMappingPlan { &self.plan }
     pub fn signature(&self) -> &[u8] {
         &self.signature
     }
@@ -131,7 +133,7 @@ impl CodegenInput<'_> {
         Ok(CompiledDynamicMapping {
             source_shape: *source.sha256(),
             destination_shape: *destination.sha256(),
-            approved: Some(ApprovedDynamicMapping { signature, digest, native }),
+            approved: Some(ApprovedDynamicMapping { signature, digest, native, plan }),
             rejection: None,
         })
     }

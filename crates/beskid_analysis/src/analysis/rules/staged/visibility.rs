@@ -12,10 +12,19 @@ use std::collections::{HashMap, HashSet};
 /// Private items of the canonical public Dynamic unit that only the compiler references, by
 /// name, when it issues specialized Dynamic bridges: `ReserveAllocationFailureV1`
 /// (`beskid_queries::semantic_contract::reserved_failure`) and the pack/unpack result factories
-/// (`beskid_queries::semantic_contract::dynamic_pack`). Source never calls them, so the unused
-/// private item rule exempts exactly these names in exactly that unit.
-const COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS: &[&str] =
-    &["ReserveAllocationFailureV1", "PackedResultV1", "PackedInvalidV1", "UnpackedResultV1", "UnpackedInvalidV1"];
+/// (`beskid_queries::semantic_contract::dynamic_pack`), plus the browser provider's Dynamic
+/// results. Source never calls them, so the unused-private-item rule exempts these exact names
+/// only in that canonical unit.
+const COMPILER_ISSUED_DYNAMIC_BRIDGE_ITEMS: &[&str] = &[
+    "ReserveAllocationFailureV1",
+    "PackedResultV1",
+    "PackedInvalidV1",
+    "UnpackedResultV1",
+    "UnpackedInvalidV1",
+    "BrowserDynamicValueResultV1",
+    "BrowserDynamicValueErrorV1",
+    "BrowserDynamicPayloadErrorV1",
+];
 
 /// Private factories of the canonical serialization descriptor unit that only the compiled
 /// serialization shape authority (`beskid_queries::serialization_shape_binding`) references.

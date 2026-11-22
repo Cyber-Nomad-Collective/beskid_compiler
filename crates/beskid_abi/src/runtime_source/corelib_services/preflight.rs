@@ -61,6 +61,14 @@ pub fn preflight_corelib_service_import(
         });
     }
 
+    if crate::runtime_source::browser_protocol::operation(service.symbol).is_some() {
+        // These services are only admitted from selected browser facade units. Their
+        // ABI is part of the browser profile; no native kit implements these imports.
+        return super::abi_shape::canonical_corelib_service_abi(service).ok_or_else(|| {
+            CorelibServiceImportPreflightError::MissingManifestService { name: service.name.to_owned() }
+        });
+    }
+
     let bindings = crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
         .iter()
         .filter(|binding| binding.service == service.name)

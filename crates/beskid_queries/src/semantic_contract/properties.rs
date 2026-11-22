@@ -18,7 +18,7 @@ mod equality;
 pub use derived_observation::observation_stored_dependencies;
 pub(super) use derived_observation::{ObservationDependencyKind, checked_observation_dependencies};
 pub use equality::observation_property_equality_instance;
-pub(super) use equality::{observation_equality_instance, observation_has_bounded_equality};
+pub(super) use equality::{observation_equality_instance, observation_has_bounded_equality, observation_property_value_identity};
 
 /// A source reference to a property or its contextual backing storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

@@ -1,0 +1,12 @@
+use Concurrency.Fiber;
+use Core.Results;
+
+i64 Worker() { return 42_i64; }
+
+pub i64 Main() {
+    Fiber<i64> child = spawn Worker();
+    return match child.Join() {
+        Result::Ok(value) => value,
+        Result::Error(_) => 0_i64,
+    };
+}

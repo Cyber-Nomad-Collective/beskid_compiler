@@ -66,9 +66,7 @@ impl SyntaxNodeFacts<'_> {
         source: &beskid_queries::EnumLayoutFact,
     ) -> Option<EnumLayout> {
         let isa = self.isa?;
-        let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
-        let physical =
-            source.scalar_payload_object_layout(self.input.target().pointer_width, header.size, header.alignment)?;
+        let physical = self.input.enum_object_layout(source)?;
         self.build_enum_layout(isa, physical)
     }
 

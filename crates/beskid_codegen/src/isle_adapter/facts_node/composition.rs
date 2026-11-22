@@ -238,7 +238,15 @@ impl SyntaxNodeFacts<'_> {
         (signature.params.len() == usize::from(record.is_some()) + usize::from(arguments_slot.is_some())
             && signature.params.iter().all(|parameter| parameter.value_type == pointer))
         .then_some(())?;
-        Some(CompositionHookCall { function: DirectCallee::item(function), signature, record, arguments_slot })
+        let browser_disposal_id = if self.input.browser_profile {
+            plan.disposal_hooks.iter().position(|candidate| candidate == hook)
+                .and_then(|index| u32::try_from(index + 1).ok())
+        } else {
+            None
+        };
+        Some(CompositionHookCall {
+            function: DirectCallee::item(function), signature, browser_disposal_id, record, arguments_slot,
+        })
     }
 
     /// The implementation a contract method call on an injected contract-typed field calls: the
@@ -250,6 +258,11 @@ impl SyntaxNodeFacts<'_> {
         key: AstNodeKey,
         signature: AstNodeKey,
     ) -> Option<AstNodeKey> {
+        // The browser uses the source-proven contract witness, including for an injected field
+        // whose current plan has only one concrete implementation.
+        if self.input.browser_profile {
+            return None;
+        }
         let receiver = *self.query(beskid_queries::call_arguments(self.db, key))?.first()?;
         let (access, _, _, _) = self.composition_injected_access(receiver)?;
         let (plan, snapshot) = self.input.composition_authority()?;

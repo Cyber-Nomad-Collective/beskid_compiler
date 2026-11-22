@@ -39,7 +39,10 @@ pub use mod_semantic_authority::{
     serialization_template_getter_shape, serialization_template_instance_rebind,
 };
 pub use semantic_contract::validate_raw_c_export_signature;
+pub use semantic_contract::{ClosureSignature, SourceItemSignature, SourceNominalType, SourceSignatureType, source_contract_call_result, source_capture_type, source_spawn_handle_type, source_item_signature, source_record_fields, source_enum_variant_fields, source_aggregate_literal_type, source_array_element_type, source_specialized_item_signature};
+pub use semantic_contract::{source_event_call_signature, source_function_value_signature, source_lambda_signature, source_observer_signature, source_contract_property_value};
 pub use semantic_contract::{CompletionLexicalSnapshot, completion_lexical_snapshot};
+pub use semantic_contract::source_injected_field_type;
 
 pub use semantic_contract::{
     CanonicalContainerKind, DynamicPackingBridge, DynamicPackingField, DynamicPackingNode, DynamicPackingShape,
@@ -248,7 +251,7 @@ pub use semantic_contract::{native_mod_expression_payload, native_mod_single_arr
 
 pub use semantic_contract::{PortableNominalIdentity, portable_nominal_identity};
 
-pub use semantic_contract::{CheckedDynamicResultBridge, checked_dynamic_result_bridge};
+pub use semantic_contract::{CheckedDynamicResultBridge, canonical_dynamic_source, checked_dynamic_result_bridge};
 
 pub use mod_semantic_authority::ReboundSerializationTarget;
 

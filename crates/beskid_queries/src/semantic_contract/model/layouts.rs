@@ -45,6 +45,8 @@ impl AggregateSpecialization {
         }
     }
 
+    pub(in crate::semantic_contract) fn arguments(&self) -> &[GenericSourceTypeIdentity] { &self.0 }
+
     pub fn arguments_display(&self) -> String {
         self.0.iter().map(GenericSourceTypeIdentity::display_name).collect::<Vec<_>>().join(", ")
     }

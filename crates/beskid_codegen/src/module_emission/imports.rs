@@ -1,15 +1,19 @@
 use std::collections::{HashMap, HashSet};
 
-use beskid_isle::{AstNodeKey, DirectCallee, StringInterner};
+use beskid_isle::{AstNodeKey, DirectCallee, CallableSite, StringInterner};
 use beskid_queries::{
     CallLowering, EventOperationKind, call_lowering, child_nodes, event_operation,
     extern_contract_import_for_declaration,
 };
-use cranelift_codegen::ir::{ExtFuncData, ExternalName, FuncRef, GlobalValueData, InstBuilder, Signature, Type, Value};
+use cranelift_codegen::ir::{ExtFuncData, ExternalName, FuncRef, GlobalValueData, Inst, InstBuilder, Signature, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
 use super::items::ResolvedSyntaxModuleItem;
 use crate::{CodegenContext, CodegenInput, ExternImport};
+use crate::artifact::BrowserCoverageFunction;
+
+pub(super) type CorelibCallSymbols = HashMap<DirectCallee, String>;
+pub(super) type BrowserCoverage = HashMap<String, BrowserCoverageFunction>;
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
 pub(crate) struct ArtifactStringInterner<'a> {
@@ -246,12 +250,34 @@ const COMPOSITION_SERVICES: &[&str] = &[
 pub(super) fn corelib_service_symbols(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
-) -> Result<HashMap<DirectCallee, String>, String> {
+    retain_browser_coverage: bool,
+) -> Result<(CorelibCallSymbols, BrowserCoverage), String> {
     let mut manifest_builtins = HashSet::new();
     let mut corelib_services = HashSet::new();
     let mut event_services = HashSet::new();
+    let mut coverage = HashMap::new();
+    let units: HashMap<_, _> = input.typed_program().assembly.units.iter().map(|unit| (&unit.path, unit)).collect();
+    let mut sources = HashMap::new();
     for item in items {
-        collect_manifest_service_callees(input.database(), item.key, &mut manifest_builtins, &mut corelib_services);
+        if retain_browser_coverage {
+            let db = input.database();
+            let mut services = HashSet::new();
+            collect_manifest_service_callees(db, item.key, &mut manifest_builtins, &mut services);
+            corelib_services.extend(services.iter().copied());
+            let path = item.key.unit.path(db);
+            let unit = units.get(path).ok_or_else(|| format!("missing browser source {}", path.display()))?;
+            let source = sources.entry(path.clone()).or_insert_with(|| std::sync::Arc::<str>::from(unit.source.as_str()));
+            let span = beskid_queries::node_span(db, item.key).ok().flatten();
+            coverage.insert(item.symbol.clone(), BrowserCoverageFunction {
+                source: source.clone(),
+                byte_start: span.map(|span| span.start),
+                path: item.key.unit.path(db).clone(),
+                span: span.map(beskid_queries::format_source_span_range),
+                services,
+            });
+        } else {
+            collect_manifest_service_callees(input.database(), item.key, &mut manifest_builtins, &mut corelib_services);
+        }
         collect_event_service_callees(input.database(), item.key, &mut event_services);
     }
     let mut symbols = HashMap::new();
@@ -355,7 +381,7 @@ pub(super) fn corelib_service_symbols(
             symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
         }
     }
-    Ok(symbols)
+    Ok((symbols, coverage))
 }
 
 fn collect_event_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, services: &mut HashSet<&'static str>) {
@@ -412,10 +438,68 @@ fn collect_manifest_service_callees(
 }
 
 pub(super) struct ArtifactCallImporter<'a> {
-    pub(super) symbols: &'a HashMap<DirectCallee, String>,
+    symbols: &'a HashMap<DirectCallee, String>,
+    callable_sites: Option<HashMap<Inst, CallableSite>>,
+}
+
+impl<'a> ArtifactCallImporter<'a> {
+    pub(super) fn new(symbols: &'a HashMap<DirectCallee, String>, retain_source_types: bool) -> Self {
+        Self { symbols, callable_sites: retain_source_types.then(HashMap::new) }
+    }
+
+    pub(super) fn retain_calls(
+        self,
+        db: &dyn beskid_queries::Db,
+        symbol: &str,
+        specialization: Option<&beskid_queries::GenericSpecializationInstance>,
+        context: &mut CodegenContext,
+    ) {
+        let Some(sites) = self.callable_sites.filter(|sites| !sites.is_empty()) else { return; };
+        let mut closures = HashMap::new();
+        let mut contracts = HashMap::new();
+        for (instruction, site) in &sites {
+            match *site {
+                CallableSite::Closure(key) => {
+                    if let Ok(Some(signature)) = beskid_queries::source_function_value_signature(db, key, specialization) {
+                        closures.insert(*instruction, signature);
+                    }
+                }
+                CallableSite::Event(key) => {
+                    if let Ok(Some(signature)) = beskid_queries::source_event_call_signature(db, key, specialization) {
+                        closures.insert(*instruction, signature);
+                    }
+                }
+                CallableSite::Observer { site, property, receiver } => {
+                    if let Ok(Some(signature)) = beskid_queries::source_observer_signature(db, site, property, receiver, specialization) {
+                        closures.insert(*instruction, signature);
+                    }
+                }
+                CallableSite::Contract(key) => {
+                    if let Ok(Some(result)) = beskid_queries::source_contract_call_result(db, key, specialization) {
+                        contracts.insert(*instruction, result);
+                    }
+                }
+                CallableSite::ContractPropertyValue(key) => {
+                    if let Ok(Some(result)) = beskid_queries::source_contract_property_value(db, key) {
+                        contracts.insert(*instruction, result);
+                    }
+                }
+                CallableSite::ClosureCodeAddress(_) => {}
+            }
+        }
+        context.callable_sites.insert(symbol.to_owned(), sites);
+        if !closures.is_empty() { context.closure_call_signatures.insert(symbol.to_owned(), closures); }
+        if !contracts.is_empty() { context.contract_call_results.insert(symbol.to_owned(), contracts); }
+    }
 }
 
 impl beskid_isle::CallImporter for ArtifactCallImporter<'_> {
+    fn record_callable_site(&mut self, instruction: Inst, site: CallableSite) {
+        if let Some(calls) = &mut self.callable_sites {
+            calls.insert(instruction, site);
+        }
+    }
+
     fn import(
         &mut self,
         builder: &mut FunctionBuilder<'_>,

@@ -135,6 +135,7 @@ pub struct CodegenInput<'db> {
     roots: Arc<[AstNodeKey]>,
     target: TargetMetadata,
     abi_manifest: AbiManifestV5,
+    pub(crate) browser_profile: bool,
     artifact_namespace: Arc<str>,
     runtime_bootstrap_units: HashSet<SourceUnitId>,
     pub(crate) observed_properties: Arc<crate::observation::ObservedProperties>,
@@ -147,6 +148,7 @@ pub struct CodegenInput<'db> {
 
 /// A [`CodegenInput`] without its database handle ([`CodegenInput::detach`]).
 pub(crate) struct DetachedCodegenInput {
+    browser_profile: bool,
     typed_program: TypedProgram,
     roots: Arc<[AstNodeKey]>,
     runtime_bootstrap_units: HashSet<SourceUnitId>,
@@ -165,6 +167,7 @@ impl DetachedCodegenInput {
     /// Re-attach to a handle of the storage the input was validated against.
     pub(crate) fn attach(self, db: &dyn Db) -> CodegenInput<'_> {
         CodegenInput {
+            browser_profile: self.browser_profile,
             db,
             typed_program: self.typed_program,
             roots: self.roots,
@@ -240,6 +243,7 @@ impl<'db> CodegenInput<'db> {
             roots,
             target,
             abi_manifest,
+            browser_profile: false,
             artifact_namespace: Arc::from("module"),
             runtime_bootstrap_units,
             observed_properties: Arc::default(),
@@ -317,6 +321,7 @@ impl<'db> CodegenInput<'db> {
     /// long-lived Cranelift module receives more than one source artifact.
     pub fn with_artifact_namespace(&self, artifact_namespace: Arc<str>) -> Self {
         Self {
+            browser_profile: self.browser_profile,
             db: self.db,
             typed_program: self.typed_program.clone(),
             roots: self.roots.clone(),
@@ -339,6 +344,7 @@ impl<'db> CodegenInput<'db> {
     /// validated against, because nothing writes while emission runs.
     pub(crate) fn detach(&self) -> DetachedCodegenInput {
         DetachedCodegenInput {
+            browser_profile: self.browser_profile,
             typed_program: self.typed_program.clone(),
             roots: self.roots.clone(),
             runtime_bootstrap_units: self.runtime_bootstrap_units.clone(),

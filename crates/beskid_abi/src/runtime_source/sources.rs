@@ -828,6 +828,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
         logical_path: CANONICAL_NETWORK_INTERNAL_SOURCE_PATH.into(),
         source: CANONICAL_NETWORK_INTERNAL_SOURCE.into(),
     });
+    sources.extend(super::browser_protocol::SOURCES.iter().map(|source| SourceUnit {
+        logical_path: source.logical_path.into(),
+        source: source.browser.into(),
+    }));
     sources
 }
 

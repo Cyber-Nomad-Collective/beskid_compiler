@@ -1,0 +1,19 @@
+[package]
+name = "beskid_wasm"
+version = "0.7.1"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+beskid_abi = { path = "../beskid_abi" }
+beskid_codegen = { path = "../beskid_codegen" }
+beskid_queries = { path = "../beskid_queries" }
+cranelift-codegen.workspace = true
+cranelift-module.workspace = true
+clif2wasm = "=0.1.0"
+wasm-encoder = "=0.248.0"
+wasmparser = "=0.248.0"
+anyhow = "1"
+tempfile = "3"
+serde_json = "1"
+sha2 = "0.10"

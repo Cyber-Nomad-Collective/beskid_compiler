@@ -67,6 +67,8 @@ pub enum AssemblyError {
     AggregateMembers { manifest_path: PathBuf, message: String },
     #[error("cannot read the glue owner blocks of project {manifest_path}: {message}")]
     GlueOwners { manifest_path: PathBuf, message: String },
+    #[error("cannot verify browser source selection: {message}")]
+    BrowserSources { message: String },
     #[error("assembly exceeded max_units ({max})")]
     MaxUnits { max: usize },
     /// A module path the import closure needs is provided by more than one package (E1104).

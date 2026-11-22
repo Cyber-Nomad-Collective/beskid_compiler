@@ -131,7 +131,11 @@ pub fn program_assembly(
 
     let grammar = db.grammar_revision();
     for unit in assembly.units.iter() {
-        seed_file_from_disk(db, unit.path.clone());
+        if options.browser_profile {
+            db.ensure_file_text(unit.path.clone(), unit.source.clone());
+        } else {
+            seed_file_from_disk(db, unit.path.clone());
+        }
         let _ = unit_imports(db, session, grammar, unit.path.clone());
     }
 
@@ -214,12 +218,12 @@ fn rebase_onto_registered_generation(
 
 fn assembly_options_fingerprint(options: &AssemblyOptions) -> String {
     format!(
-        "discovery={:?}:recovery={:?}:skip_parse={}:max_units={:?}:native_mod_adapter={}",
+        "discovery={:?}:recovery={:?}:skip_parse={}:max_units={:?}:native_mod_adapter={}:browser_profile={}",
         options.discovery,
         options.recovery_policy,
         options.skip_parse_errors,
         options.max_units,
-        options.native_mod_adapter_sources,
+        options.native_mod_adapter_sources, options.browser_profile,
     )
 }
 

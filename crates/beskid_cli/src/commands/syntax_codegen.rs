@@ -21,6 +21,19 @@ pub(super) fn lower_prepared_entrypoint(
     })
 }
 
+/// Lower the browser entrypoint and exports through the released typed frontend.
+pub(super) fn lower_browser_export(
+    front: &beskid_analysis::services::ExecutableFrontEnd,
+    entrypoint: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<beskid_codegen::CodegenArtifact> {
+    let target = resolve_abi_target(Some("x86_64-unknown-linux-gnu"))?;
+    observe_phase_result(pipeline, CODEGEN_CLIF, || {
+        beskid_aot::prepared_syntax::lower_prepared_syntax_export(front, entrypoint, target)
+            .map_err(anyhow::Error::from)
+    })
+}
+
 /// Lower the library output (shared, static, object) of a prepared frontend snapshot through the
 /// AOT target ISA: every item of the units the library owns plus the dependency items they reach.
 pub(super) fn lower_prepared_module(

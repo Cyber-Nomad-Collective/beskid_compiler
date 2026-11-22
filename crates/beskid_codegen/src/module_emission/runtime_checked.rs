@@ -69,7 +69,7 @@ pub(super) fn emit_checked_runtime_constructors(
             );
         }
         for (callee, member) in members {
-            let mut importer = ArtifactCallImporter { symbols: &checked_symbols };
+            let mut importer = ArtifactCallImporter::new(&checked_symbols, false);
             let mut strings = ArtifactStringInterner { context, pointer_type: isa.pointer_type() };
             let function = crate::checked_effect::emit_artifact_checked_effect_item(
                 input,

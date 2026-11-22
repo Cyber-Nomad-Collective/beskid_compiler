@@ -455,6 +455,7 @@ pub fn assemble_resolved_input_with_db(
             beskid_analysis::projects::assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
         assembly_options.recovery_policy = options.front_end.assembly_recovery;
         assembly_options.native_mod_adapter_sources = options.native_mod_adapter_sources;
+        assembly_options.browser_profile = options.front_end.browser_profile;
         let assembly = program_assembly(
             db,
             plan,

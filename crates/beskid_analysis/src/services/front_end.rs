@@ -40,6 +40,7 @@ pub struct FrontEndOptions {
     pub with_semantic_diagnostics: bool,
     pub assembly_discovery: crate::projects::AssemblyDiscovery,
     pub assembly_recovery: crate::projects::AssemblyRecoveryPolicy,
+    pub browser_profile: bool,
     pub module_level_meta_items_allowed: Option<bool>,
     /// The units the preparation judges (structural rules and the query gate).
     pub judged_units: JudgedUnits,
@@ -66,6 +67,7 @@ impl Default for FrontEndOptions {
             with_semantic_diagnostics: true,
             assembly_discovery: crate::projects::AssemblyDiscovery::ImportClosure,
             assembly_recovery: crate::projects::AssemblyRecoveryPolicy::Strict,
+            browser_profile: false,
             module_level_meta_items_allowed: None,
             judged_units: JudgedUnits::OwnUnits,
         }

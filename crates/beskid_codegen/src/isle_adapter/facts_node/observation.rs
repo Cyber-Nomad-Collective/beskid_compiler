@@ -53,6 +53,7 @@ impl SyntaxNodeFacts<'_> {
             let field = layout.fields.get(access.index as usize).ok_or(())?;
             let always = self.query(beskid_queries::property_always(self.db, reference.declaration)).ok_or(())?;
             Some(ObservedProperty {
+                declaration: reference.declaration,
                 property_id: u64::from(reference.declaration.node.0),
                 equality: if always { ObservationEquality::Always } else { self.equality_for_property(target, reference.declaration, reference.receiver, field.abi_type)? },
             })
@@ -77,6 +78,7 @@ impl SyntaxNodeFacts<'_> {
             };
             derived.push(ObservedDerived {
                 property: ObservedProperty {
+                    declaration: getter,
                     property_id: u64::from(getter.node.0),
                     equality: self.equality_for_property(target, getter, reference.receiver, signature.result)?,
                 },
@@ -85,7 +87,7 @@ impl SyntaxNodeFacts<'_> {
                 signature: signature_for_item(self.isa.ok_or(())?, signature).ok_or(())?,
             });
         }
-        Ok(Some(ObservedStore { slot_offset: layout.observer_slot.ok_or(())?, property, derived }))
+        Ok(Some(ObservedStore { receiver: reference.receiver, slot_offset: layout.observer_slot.ok_or(())?, property, derived }))
     }
 
     fn equality_for_property(

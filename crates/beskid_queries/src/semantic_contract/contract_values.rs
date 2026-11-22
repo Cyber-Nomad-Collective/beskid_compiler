@@ -692,7 +692,7 @@ pub fn contract_value_receiver(
 /// declaring identifier of a local (`g` in `g.Greet()`), a field segment of a path
 /// (`holder.greeter` in `holder.greeter.Rank()`), or the callee path itself when the receiver is
 /// an unqualified local the collection could not classify.
-fn receiver_identity(
+pub(super) fn receiver_identity(
     db: &dyn Db,
     call: AstNodeKey,
     receiver: AstNodeKey,

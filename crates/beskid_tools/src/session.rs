@@ -119,10 +119,19 @@ impl CommandSession {
         resolved: &ResolvedInput,
         options: SemanticGateOptions,
     ) -> Result<PreparedCompilation> {
+        self.executable_gate_for_profile(resolved, options, false)
+    }
+
+    pub fn executable_gate_for_profile(
+        &self,
+        resolved: &ResolvedInput,
+        options: SemanticGateOptions,
+        browser_profile: bool,
+    ) -> Result<PreparedCompilation> {
         let (prepared, gate_diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
             resolved,
             services::PrepareOptions {
-                front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                front_end: services::FrontEndOptions { with_semantic_diagnostics: true, browser_profile, ..Default::default() },
                 native_mod_adapter_sources: false,
                 mod_host: self.mod_host.clone(),
             },

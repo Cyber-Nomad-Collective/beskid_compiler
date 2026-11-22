@@ -49,6 +49,7 @@ pub struct DynamicSignatureData {
     payload_getter: String,
 }
 impl DynamicSignatureData {
+    pub fn payload_getter(&self) -> &str { &self.payload_getter }
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -70,6 +71,9 @@ pub struct DynamicMappingData {
     mapping: crate::dynamic_mapping::ApprovedDynamicMapping,
 }
 impl DynamicMappingData {
+    pub fn source_index(&self) -> usize { self.source }
+    pub fn destination_index(&self) -> usize { self.destination }
+    pub fn plan(&self) -> &beskid_queries::DynamicMappingPlan { self.mapping.plan() }
     pub fn signature(&self) -> &[u8] {
         self.mapping.signature()
     }
@@ -93,6 +97,10 @@ pub struct DynamicInitializationPlan {
     seal: ArtifactSeal,
 }
 impl DynamicInitializationPlan {
+    /// Recheck a source-authorized retained Dynamic operation after browser reachability pruning.
+    pub fn admits_function(&self, function: &crate::LoweredFunction) -> bool {
+        self.seal.functions.iter().any(|original| original == function)
+    }
     pub fn target(&self) -> &beskid_abi::abi_v5::TargetMetadata {
         &self.target
     }
@@ -212,6 +220,7 @@ pub(crate) fn issue_dynamic_initialization(
     instances: &[GenericSpecializationInstance],
     artifact: &CodegenArtifact,
 ) -> Result<Option<DynamicInitializationPlan>, String> {
+    let browser = !artifact.browser_dynamic.is_empty();
     let mut shapes = BTreeMap::new();
     let mut total = 0usize;
     let mut mappings = BTreeMap::new();
@@ -258,7 +267,7 @@ pub(crate) fn issue_dynamic_initialization(
             continue;
         }
         total = total.checked_add(shape.bytes().len()).ok_or("Dynamic signature total overflow")?;
-        if total > 16 * 1024 * 1024 || (shapes.len() + 1) * 6 + mappings.len() * 2 > 4096 {
+        if !browser && (total > 16 * 1024 * 1024 || (shapes.len() + 1) * 6 + mappings.len() * 2 > 4096) {
             return Err("Dynamic initializer closure exceeds profile bound".into());
         }
         shapes.insert(
@@ -270,15 +279,13 @@ pub(crate) fn issue_dynamic_initialization(
             },
         );
     }
-    if shapes.is_empty() {
+    if shapes.is_empty() && !browser {
         return Ok(None);
     }
     let order = shapes.keys().copied().collect::<Vec<_>>();
     let mut issued_mappings = Vec::with_capacity(mappings.len());
     for (source, destination, mapping) in mappings.into_values() {
-        let index = |digest: &[u8; 32]| {
-            order.iter().position(|candidate| candidate == digest).ok_or("Dynamic mapping shape was not registered")
-        };
+        let index = |digest: &[u8; 32]| order.binary_search(digest).map_err(|_| "Dynamic mapping shape was not registered");
         total = total.checked_add(mapping.signature().len()).ok_or("Dynamic signature total overflow")?;
         issued_mappings.push(DynamicMappingData {
             source: index(&source)?,
@@ -286,7 +293,7 @@ pub(crate) fn issue_dynamic_initialization(
             mapping,
         });
     }
-    if total > 16 * 1024 * 1024 || shapes.len() * 6 + issued_mappings.len() * 2 > 4096 {
+    if !browser && (total > 16 * 1024 * 1024 || shapes.len() * 6 + issued_mappings.len() * 2 > 4096) {
         return Err("Dynamic initializer closure exceeds profile bound".into());
     }
     if input.typed_program().generation.0 == 0 {

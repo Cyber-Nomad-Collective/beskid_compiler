@@ -59,6 +59,7 @@ pub struct AggregateStaticPlan {
     pub object_alignment: u64,
     pub pointer_map_offsets: Arc<[u64]>,
     pub fields: Arc<[AggregateStaticField]>,
+    pub observer_slot: Option<u32>,
     pub descriptor_flags: u64,
     pub descriptor_getter: Option<String>,
 }
@@ -175,6 +176,7 @@ impl CodegenInput<'_> {
             object_alignment: layout.object_alignment,
             pointer_map_offsets: layout.pointer_map_offsets,
             fields: layout.fields,
+            observer_slot: layout.observer_slot,
         })
     }
 
@@ -210,6 +212,7 @@ impl CodegenInput<'_> {
             object_alignment: layout.object_alignment,
             pointer_map_offsets: layout.pointer_map_offsets,
             fields: layout.fields,
+            observer_slot: layout.observer_slot,
         })
     }
 
@@ -243,6 +246,7 @@ impl CodegenInput<'_> {
             object_alignment: layout.object_alignment,
             pointer_map_offsets: layout.pointer_map_offsets,
             fields: layout.fields,
+            observer_slot: layout.observer_slot,
         })
     }
 
@@ -312,6 +316,7 @@ impl CodegenInput<'_> {
             object_alignment: alignment,
             pointer_map_offsets: pointer_map_offsets.into(),
             fields: fields.into(),
+            observer_slot: None,
         })
     }
 
@@ -336,6 +341,19 @@ impl CodegenInput<'_> {
         declaration: AstNodeKey,
         aggregate: &AggregateLayoutFact,
     ) -> Option<AggregateObjectLayout> {
+        self.aggregate_object_layout_from_types(declaration, self.observed_properties.has_slot(declaration, &aggregate.specialization), aggregate.fields.iter().map(|(_, shape)| match shape {
+            AggregateFieldShape::Scalar(ty) => (*ty, *ty == SemanticTypeId::STRING),
+            AggregateFieldShape::ManagedReference(ty) => (*ty, true),
+            AggregateFieldShape::Nominal(_) => (SemanticTypeId::POINTER, true),
+        }))
+    }
+
+    pub(crate) fn aggregate_object_layout_from_types(
+        &self,
+        declaration: AstNodeKey,
+        observed: bool,
+        types: impl ExactSizeIterator<Item = (SemanticTypeId, bool)>,
+    ) -> Option<AggregateObjectLayout> {
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         if header.size != 16 || !valid_alignment(header.alignment) {
             return None;
@@ -343,13 +361,9 @@ impl CodegenInput<'_> {
         let mut size = header.size;
         let mut alignment = header.alignment;
         let mut pointer_map_offsets = Vec::new();
-        let mut fields = Vec::with_capacity(aggregate.fields.len());
+        let mut fields = Vec::with_capacity(types.len());
         let mut injected_fields = Vec::new();
-        for (_, shape) in aggregate.fields.iter() {
-            let abi_type = match shape {
-                AggregateFieldShape::Scalar(semantic) | AggregateFieldShape::ManagedReference(semantic) => *semantic,
-                AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
-            };
+        for (abi_type, traced) in types {
             if abi_type == SemanticTypeId::UNIT {
                 fields.push(AggregateStaticField { abi_type, field_offset: size });
                 continue;
@@ -359,12 +373,7 @@ impl CodegenInput<'_> {
             let field_offset = size;
             size = size.checked_add(scalar.size)?;
             alignment = alignment.max(scalar.alignment);
-            if matches!(
-                shape,
-                AggregateFieldShape::Nominal(_)
-                    | AggregateFieldShape::ManagedReference(_)
-                    | AggregateFieldShape::Scalar(SemanticTypeId::STRING)
-            ) {
+            if traced {
                 pointer_map_offsets.push(field_offset);
             }
             fields.push(AggregateStaticField { abi_type, field_offset });
@@ -406,7 +415,7 @@ impl CodegenInput<'_> {
                 }
             }
         }
-        let observer_slot = if self.observed_properties.has_slot(declaration, &aggregate.specialization) {
+        let observer_slot = if observed {
             if self.target().pointer_width != 64 {
                 return None;
             }
@@ -586,6 +595,7 @@ impl CodegenInput<'_> {
             object_alignment: layout.object_alignment,
             pointer_map_offsets: layout.pointer_map_offsets,
             fields: layout.fields,
+            observer_slot: layout.observer_slot,
         })
     }
 
@@ -600,26 +610,7 @@ impl CodegenInput<'_> {
         literal: AstNodeKey,
         specialization: Option<&GenericSpecializationInstance>,
     ) -> Option<AggregateStaticPlan> {
-        let specialized = specialization.and_then(|specialization| {
-            enum_constructor_specialization(self.database(), literal, specialization).ok().flatten()
-        });
-        // `operand?` allocates its propagated error in the enclosing return layout, which a
-        // specialized body reads in its own environment.
-        let propagated = match specialization {
-            Some(enclosing) => {
-                beskid_queries::specialized_try_expression_fact(self.database(), literal, enclosing).ok().flatten()
-            }
-            None => beskid_queries::try_expression_fact(self.database(), literal).ok().flatten(),
-        };
-        let specialized_propagation = specialization.is_some() && propagated.is_some();
-        let layout = propagated
-            .map(|fact| fact.return_layout)
-            .or_else(|| specialized.as_ref().map(|fact| fact.layout.clone()))
-            .or_else(|| enum_layout(self.database(), literal).ok().flatten())
-            .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
-        let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
-        let physical =
-            layout.scalar_payload_object_layout(self.target().pointer_width, header.size, header.alignment)?;
+        let (physical, specialized) = self.enum_storage_layout(literal, specialization)?;
         let fields =
             std::iter::once(AggregateStaticField { abi_type: SemanticTypeId::I32, field_offset: physical.tag_offset })
                 .chain(physical.storage_fields.iter().map(|(abi_type, field_offset)| AggregateStaticField {
@@ -632,7 +623,7 @@ impl CodegenInput<'_> {
                 beskid_queries::SourceUnitId::new(self.database(), unit.path.clone()) == literal.unit
             })?;
         let specialization_identity = specialization
-            .filter(|_| specialized.is_some() || specialized_propagation)
+            .filter(|_| specialized)
             .map(generic_specialization_identity)
             .map(|identity| identity.iter().map(u32::to_string).collect::<Vec<_>>().join("_"));
         let identity = format!(
@@ -657,8 +648,61 @@ impl CodegenInput<'_> {
             object_alignment: physical.object_alignment,
             pointer_map_offsets: physical.pointer_map_offsets,
             fields: fields.into(),
+            observer_slot: None,
         })
     }
+
+    pub(crate) fn enum_storage_layout(
+        &self,
+        literal: AstNodeKey,
+        specialization: Option<&GenericSpecializationInstance>,
+    ) -> Option<(beskid_queries::EnumScalarPayloadObjectLayout, bool)> {
+        let specialized = specialization.and_then(|specialization| {
+            enum_constructor_specialization(self.database(), literal, specialization)
+                .ok()
+                .flatten()
+        });
+        let propagated = match specialization {
+            Some(enclosing) => beskid_queries::specialized_try_expression_fact(self.database(), literal, enclosing).ok().flatten(),
+            None => beskid_queries::try_expression_fact(self.database(), literal).ok().flatten(),
+        };
+        let specialized_propagation = specialization.is_some() && propagated.is_some();
+        let layout = propagated
+            .map(|fact| fact.return_layout)
+            .or_else(|| specialized.as_ref().map(|fact| fact.layout.clone()))
+            .or_else(|| enum_layout(self.database(), literal).ok().flatten())
+            .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
+        Some((self.enum_object_layout(&layout)?, specialized.is_some() || specialized_propagation))
+    }
+
+    /// The GC target gives each variant its own typed fields. Both ISLE field accesses and
+    /// allocation descriptors consume this layout, including nested pattern matches.
+    pub(crate) fn enum_object_layout(
+        &self,
+        layout: &beskid_queries::EnumLayoutFact,
+    ) -> Option<beskid_queries::EnumScalarPayloadObjectLayout> {
+        let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
+        let physical = |layout: &beskid_queries::EnumLayoutFact| {
+            layout.scalar_payload_object_layout(self.target().pointer_width, header.size, header.alignment)
+        };
+        if !self.browser_profile {
+            return physical(layout);
+        }
+        // Use the same scalar, alignment, pointer-map and unit-field rules as native layout.
+        let all_fields = layout.variants.iter().flat_map(|variant| variant.fields.iter().cloned()).collect();
+        let combined = beskid_queries::EnumVariantLayoutFact { name: Arc::from(""), fields: all_fields };
+        let mut storage = physical(&beskid_queries::EnumLayoutFact { variants: Arc::from([combined]) })?;
+        let mut slots = storage.variants.first()?.payload_fields.as_ref();
+        let mut variants = Vec::with_capacity(layout.variants.len());
+        for variant in layout.variants.iter() {
+            let (fields, rest) = slots.split_at_checked(variant.fields.len())?;
+            variants.push(beskid_queries::EnumScalarPayloadVariantLayout { payload_fields: fields.into() });
+            slots = rest;
+        }
+        storage.variants = variants.into();
+        Some(storage)
+    }
+
 }
 
 fn artifact_namespace(input: &CodegenInput<'_>) -> String {

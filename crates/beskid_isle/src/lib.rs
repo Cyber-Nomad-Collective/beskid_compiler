@@ -24,7 +24,7 @@ pub mod target_isa;
 mod write_barrier;
 
 pub use clif_primitives::ClifPrimitives;
-pub use context::{CallImporter, IsleContext, StringInterner, lower_expression, lower_statement};
+pub use context::{CallImporter, CallableSite, IsleContext, StringInterner, lower_expression, lower_statement};
 pub use dispatch::pointer_type as isle_pointer_type;
 pub use emitter::{EmissionServices, FunctionEmitter, ItemStatementEmission};
 pub use errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};

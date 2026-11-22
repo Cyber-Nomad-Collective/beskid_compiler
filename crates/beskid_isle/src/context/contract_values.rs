@@ -223,7 +223,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 let mut signature = plan.signature.clone();
                 signature.params.truncate(1);
                 signature.returns = vec![cranelift_codegen::ir::AbiParam::new(parameter)];
-                let current = self.call_boxed_method(record, getter, signature, &[])??;
+                let current = self.call_boxed_method(CallableSite::ContractPropertyValue(key), record, getter, signature, &[])??;
                 self.compound_assignment_value(key, operator, storage, current, argument, parameter)?
             } else {
                 self.lower_coerced_expression(argument)?
@@ -239,7 +239,7 @@ impl IsleContext<'_, '_, '_, '_> {
         if parameters.next().is_some() {
             return None;
         }
-        let result = self.call_boxed_method(record, plan.slot, plan.signature, &arguments)?;
+        let result = self.call_boxed_method(CallableSite::Contract(key), record, plan.slot, plan.signature, &arguments)?;
         let result = if assignment.is_some() { arguments.first().copied() } else { result };
         for root in roots.into_iter().rev() {
             self.release_expression_root(root)?;
@@ -250,6 +250,7 @@ impl IsleContext<'_, '_, '_, '_> {
 
     fn call_boxed_method(
         &mut self,
+        site: CallableSite,
         record: Value,
         slot: u32,
         signature: cranelift_codegen::ir::Signature,
@@ -266,6 +267,7 @@ impl IsleContext<'_, '_, '_, '_> {
         call_arguments.push(receiver);
         call_arguments.extend_from_slice(arguments);
         let call = self.builder.ins().call_indirect(signature, entry, &call_arguments);
+        self.record_callable_site(call, site);
         let result = self.builder.inst_results(call).first().copied();
         self.guard_checked_allocation()?;
         Some(result)

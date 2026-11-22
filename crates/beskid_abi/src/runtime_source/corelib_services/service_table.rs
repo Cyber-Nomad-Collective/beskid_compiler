@@ -62,12 +62,12 @@ impl<'de> serde::Deserialize<'de> for CorelibService {
         }
 
         let fields = Fields::deserialize(deserializer)?;
-        for service in CORELIB_SERVICES {
+        for service in corelib_services() {
             if service.name == fields.name
                 && service.symbol == fields.symbol
                 && service.source_path == fields.source_path
             {
-                return Ok(*service);
+                return Ok(service);
             }
         }
         Err(serde::de::Error::custom(format!(
@@ -75,6 +75,12 @@ impl<'de> serde::Deserialize<'de> for CorelibService {
             fields.name, fields.symbol, fields.source_path
         )))
     }
+}
+
+pub(super) fn corelib_services() -> impl Iterator<Item = CorelibService> {
+    CORELIB_SERVICES.iter().copied().chain(
+        crate::runtime_source::browser_protocol::operations().iter().map(|operation| operation.service),
+    )
 }
 
 pub(super) const CORELIB_SERVICES: &[CorelibService] = &[

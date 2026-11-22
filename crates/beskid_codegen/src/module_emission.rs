@@ -1,9 +1,12 @@
 pub(crate) mod canonical_empty;
+mod composition_source;
 mod contract_witnesses;
 mod contracts;
 pub(crate) mod data;
 pub(crate) mod dynamic;
+pub(crate) mod dynamic_browser;
 pub(crate) mod imports;
+mod enum_storage;
 mod items;
 mod optional_externs;
 mod orchestration;
@@ -36,6 +39,7 @@ pub use orchestration::{
     CheckedFailureEntry, ModuleEmissionSession, checked_failure_entries, checked_failure_plans, emit_syntax_program,
     emit_syntax_program_in_session, lower_syntax_program,
 };
+pub(crate) use orchestration::lower_syntax_program_retaining_source_types;
 
 pub(crate) use orchestration::emitted_item_keys;
 pub(crate) use trampolines::isolate_entry_shape;

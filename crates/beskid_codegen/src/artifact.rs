@@ -1,6 +1,6 @@
 //! Output records and accumulation state for syntax-driven ISLE code generation.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cranelift_codegen::ir::Function;
 
@@ -9,6 +9,18 @@ use cranelift_codegen::ir::Function;
 pub struct LoweredFunction {
     pub name: String,
     pub function: Function,
+}
+
+/// Source and generated layout facts for one fiber entry.
+#[derive(Debug, Clone)]
+pub struct SpawnArtifact {
+    pub trampoline: String,
+    pub target: String,
+    pub lambda: Option<beskid_queries::AstNodeKey>,
+    pub handle_request: String,
+    pub result_request: String,
+    pub argument_request: Option<String>,
+    pub handle_type: beskid_queries::SourceNominalType,
 }
 
 /// External function import authorized by syntax and semantic facts.
@@ -59,23 +71,67 @@ pub fn resolve_export_entries(functions: &[LoweredFunction], exports: &[ExportEn
     Ok(())
 }
 
+/// Generation-checked source facts retained for browser qualification.
+#[derive(Debug, Clone)]
+pub struct BrowserCoverageFunction {
+    pub source: std::sync::Arc<str>,
+    pub byte_start: Option<usize>,
+    pub path: std::path::PathBuf,
+    pub span: Option<String>,
+    pub services: HashSet<beskid_abi::runtime_source::CorelibService>,
+}
+
+pub const BROWSER_COVERAGE_ENV: &str = "BESKID_WASM_COVERAGE";
+
 /// Complete output of the syntax → ISLE → verified CLIF path.
 #[derive(Debug, Clone, Default)]
 pub struct CodegenArtifact {
     pub functions: Vec<LoweredFunction>,
     pub dynamic_initialization: Option<crate::dynamic_initialization::DynamicInitializationPlan>,
+    pub browser_dynamic: crate::BrowserDynamicBindings,
+    /// Source-authorized browser composition and its exact generated disposal hooks.
+    pub browser_composition_hooks: Option<Vec<String>>,
+    /// Source types preserve nominal identities where the primitive signature is unavailable.
+    pub source_signatures: HashMap<String, beskid_queries::SourceItemSignature>,
+    /// Link names explicitly exported by the browser application, keyed by exact lowered symbol.
+    pub browser_exports: std::collections::BTreeMap<String, String>,
+    /// Exact nominal instance for each allocation request with proven source provenance.
+    pub aggregate_declarations: HashMap<String, beskid_queries::SourceNominalType>,
+    /// Source field identities for generation-bound nominal instances.
+    pub aggregate_source_fields:
+        HashMap<beskid_queries::SourceNominalType, std::sync::Arc<[beskid_queries::SourceSignatureType]>>,
+    /// Layouts needed by typed fields even when this program never constructs the referenced record.
+    pub referenced_record_layouts: Vec<(beskid_queries::SourceNominalType, crate::aggregate_static::AggregateObjectLayout)>,
+    /// Exact source element identity for pointer-shaped arrays.
+    pub array_source_elements: HashMap<String, beskid_queries::SourceSignatureType>,
     pub string_literals: HashMap<String, Vec<u8>>,
     pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
+    pub spawn_artifacts: Vec<SpawnArtifact>,
+    /// Allocation requests for the hidden environments of exact emitted lambda entries.
+    pub closure_environment_requests: HashMap<String, String>,
+    pub callable_sites: HashMap<String, HashMap<cranelift_codegen::ir::Inst, beskid_isle::CallableSite>>,
+    pub closure_call_signatures: HashMap<String, HashMap<cranelift_codegen::ir::Inst, beskid_queries::SourceItemSignature>>,
+    /// Exact field order of each specialized closure environment, keyed by its allocation request.
+    pub closure_capture_types: HashMap<String, Vec<Option<beskid_queries::SourceSignatureType>>>,
     /// Whether this artifact requires the fixed managed wrapper layout used by event handlers.
     pub event_handler_wrapper_required: bool,
+    /// Native event slots derived from the same checked fields used by ISLE.
+    pub browser_event_layouts: HashMap<beskid_queries::AstNodeKey, Vec<beskid_queries::EventFieldLayoutFact>>,
     pub aggregate_static_plans: Vec<crate::aggregate_static::AggregateStaticPlan>,
     pub array_static_plans: Vec<crate::array_static::ArrayStaticPlan>,
     /// Whether this artifact allocates contract boxes (runtime contract dispatch, v0.6.7): the
     /// two box descriptors are then emitted.
     pub contract_boxes_required: bool,
+    pub contract_call_results: HashMap<String, HashMap<cranelift_codegen::ir::Inst, beskid_queries::SourceSignatureType>>,
+    pub source_contracts: HashSet<beskid_queries::SourceNominalType>,
     /// Witness tables of this artifact, emitted after its functions are declared.
     pub witness_tables: Vec<crate::contract_static::WitnessTablePlan>,
     pub extern_imports: Vec<ExternImport>,
+    /// Runtime service names admitted by generation-checked source facts before merging
+    /// Corelib services with user extern declarations.
+    pub corelib_service_symbols: HashSet<String>,
+    /// Qualified call origins are retained only for an opted-in browser build.
+    pub browser_coverage: HashMap<String, BrowserCoverageFunction>,
     /// Runtime-intrinsic imports resolved only because this artifact's compilation held the
     /// canonical runtime intrinsic capability (see `runtime_intrinsic_symbols` in
     /// `module_emission::imports`), kept separate from `extern_imports` so a JIT host can trust
@@ -100,6 +156,9 @@ pub struct CodegenArtifact {
 #[derive(Default)]
 pub struct CodegenContext {
     pub string_literals: HashMap<String, Vec<u8>>,
+    pub(crate) callable_sites: HashMap<String, HashMap<cranelift_codegen::ir::Inst, beskid_isle::CallableSite>>,
+    pub(crate) closure_call_signatures: HashMap<String, HashMap<cranelift_codegen::ir::Inst, beskid_queries::SourceItemSignature>>,
+    pub(crate) contract_call_results: HashMap<String, HashMap<cranelift_codegen::ir::Inst, beskid_queries::SourceSignatureType>>,
     artifact_namespace: String,
 }
 

@@ -1,14 +1,22 @@
 //! The canonical public Dynamic unit declares private bridge items that only the compiler names
-//! (`beskid_queries::semantic_contract::{dynamic_pack, reserved_failure}`). The legacy
-//! unused-private-item rule exempts exactly those items, and only in exactly that unit.
+//! (`beskid_queries::semantic_contract::{dynamic_pack, reserved_failure}` and the browser provider).
+//! The unused-private-item rule exempts those exact items in that canonical unit.
 
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::services::semantic_rule_diagnostics_for_program_with_pipeline;
 
 use crate::projects::fixture_harness::{resolve_fixture_with_assembly, with_project_test_env};
 
-const COMPILER_ISSUED_BRIDGE_ITEMS: [&str; 5] =
-    ["ReserveAllocationFailureV1", "PackedResultV1", "PackedInvalidV1", "UnpackedResultV1", "UnpackedInvalidV1"];
+const COMPILER_ISSUED_BRIDGE_ITEMS: [&str; 8] = [
+    "ReserveAllocationFailureV1",
+    "PackedResultV1",
+    "PackedInvalidV1",
+    "UnpackedResultV1",
+    "UnpackedInvalidV1",
+    "BrowserDynamicValueResultV1",
+    "BrowserDynamicValueErrorV1",
+    "BrowserDynamicPayloadErrorV1",
+];
 
 fn unused_private_items(diagnostics: &[beskid_analysis::SemanticDiagnostic]) -> Vec<&'static str> {
     COMPILER_ISSUED_BRIDGE_ITEMS

@@ -21,6 +21,20 @@ pub fn lower_prepared_syntax_entrypoint(
     })
 }
 
+/// Lower a callable browser export, allowing the host to supply its arguments.
+pub fn lower_prepared_syntax_export(
+    front: &ExecutableFrontEnd,
+    entrypoint: &str,
+    target: TargetMetadata,
+) -> AotResult<beskid_codegen::CodegenArtifact> {
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
+    beskid_queries::with_db(|db| {
+        beskid_codegen::prepared_syntax::lower_prepared_syntax_export(db, front, entrypoint, target, isa.as_ref())
+            .map(|lowered| lowered.into_artifact())
+            .map_err(crate::error::AotError::from_lowering)
+    })
+}
+
 /// Lower every executable item in a prepared frontend snapshot using the exact ISA selected for
 /// AOT object emission.
 pub fn lower_prepared_syntax_module(

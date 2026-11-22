@@ -67,6 +67,7 @@ impl CodegenInput<'_> {
                 (
                     None,
                     Some(AggregateStaticPlan {
+                        observer_slot: None,
                         descriptor_flags: 0,
                         descriptor_getter: None,
                         literal: key,

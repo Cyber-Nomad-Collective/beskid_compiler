@@ -48,6 +48,7 @@ pub struct ObservationPlan {
 /// A backing store protected by the shared observer slot for its owner.
 #[derive(Clone, Debug)]
 pub struct ObservedStore {
+    pub receiver: AstNodeKey,
     pub slot_offset: u32,
     pub property: Option<ObservedProperty>,
     pub derived: Vec<ObservedDerived>,
@@ -55,6 +56,7 @@ pub struct ObservedStore {
 
 #[derive(Clone, Debug)]
 pub struct ObservedProperty {
+    pub declaration: AstNodeKey,
     pub property_id: u64,
     pub equality: ObservationEquality,
 }
@@ -188,6 +190,8 @@ pub struct CompositionLaunchPlan {
 pub struct CompositionHookCall {
     pub function: DirectCallee,
     pub signature: Signature,
+    /// Browser runtime entry for this exact disposal hook, numbered by the frozen plan.
+    pub browser_disposal_id: Option<u32>,
     /// The generated `let` of the `launch`/`with` site that holds the record passed first.
     pub record: Option<AstNodeKey>,
     pub arguments_slot: Option<u32>,

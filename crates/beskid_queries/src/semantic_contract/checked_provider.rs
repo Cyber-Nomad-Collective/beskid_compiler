@@ -72,3 +72,10 @@ pub fn checked_dynamic_result_bridge(db: &dyn Db, key: AstNodeKey) -> SemanticQu
     };
     Ok(Some(CheckedDynamicResultBridge { declaration: key, symbol }))
 }
+
+/// Source-issued Dynamic provider and constructor declarations are restricted to the exact Foundation unit.
+pub fn canonical_dynamic_source(db: &dyn Db, key: AstNodeKey) -> bool {
+    db.syntax_unit(key.unit).is_some_and(|syntax| syntax.accepts_key(db, key)
+        && syntax.revision(db).runtime_source_authority.as_deref()
+            == Some(beskid_abi::runtime_source::CANONICAL_PUBLIC_DYNAMIC_SOURCE_PATH))
+}

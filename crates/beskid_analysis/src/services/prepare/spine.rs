@@ -57,10 +57,15 @@ pub(super) fn run_prepare_spine(
 ) -> Result<PrepareSpineOutput> {
     // Injected executor identity is not part of a reusable session cache key.
     // A native Mod adapter closure is a different assembly than the session's ordinary one.
-    let use_session_cache = use_session_cache && !options.mod_host.is_native() && !options.native_mod_adapter_sources;
+    // Browser Corelib sources can differ for the same project and entry path.
+    let use_session_cache = use_session_cache
+        && !options.mod_host.is_native()
+        && !options.native_mod_adapter_sources
+        && !options.front_end.browser_profile;
     let mut assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
     assembly_options.recovery_policy = options.front_end.assembly_recovery;
     assembly_options.native_mod_adapter_sources = options.native_mod_adapter_sources;
+    assembly_options.browser_profile = options.front_end.browser_profile;
 
     let session_fingerprint = SessionFingerprint::for_entry(plan, entry_path);
     let _prepare_guard = tracing::info_span!(
@@ -74,7 +79,7 @@ pub(super) fn run_prepare_spine(
 
     // Admit the caller's actual source generation before consulting any cached
     // executable. The entry fingerprint identifies a session, not its revision.
-    let assembled = if let Some(cached) = cached_assembly {
+    let assembled = if let Some(cached) = cached_assembly.filter(|_| !assembly_options.browser_profile) {
         if cached.recovery_policy != assembly_options.recovery_policy {
             anyhow::bail!("cached syntax assembly recovery policy does not match the requested preparation policy");
         }

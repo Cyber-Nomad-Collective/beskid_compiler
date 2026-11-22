@@ -75,6 +75,12 @@ impl ObservedProperties {
             .is_some_and(|owner| !owner.contract.is_empty() || owner.direct.contains_key(specialization))
     }
 
+    pub(crate) fn has_source_slot(&self, db: &dyn Db, nominal: &beskid_queries::SourceNominalType) -> bool {
+        self.owners.get(&nominal.declaration).is_some_and(|owner| {
+            !owner.contract.is_empty() || owner.direct.keys().any(|instance| nominal.matches_specialization(db, instance.as_ref()))
+        })
+    }
+
     pub(crate) fn contract_properties(&self, owner: AstNodeKey) -> Option<&HashSet<AstNodeKey>> {
         self.owners.get(&owner).map(|owner| &owner.contract).filter(|properties| !properties.is_empty())
     }

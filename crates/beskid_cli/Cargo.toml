@@ -1,10 +1,11 @@
 [package]
 name = "beskid_cli"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 license.workspace = true
 
 [dependencies]
+beskid_wasm = { path = "../beskid_wasm" }
 beskid_tools = { path = "../beskid_tools" }
 beskid_corelib_embed = { path = "../beskid_corelib_embed" }
 beskid_aot = { path = "../beskid_aot" }

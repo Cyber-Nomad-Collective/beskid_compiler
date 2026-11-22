@@ -1,0 +1,43 @@
+{
+  "version": 132,
+  "platforms": {
+    "x86_64-unknown-linux-gnu": {
+      "archive": "binaryen-version_132-x86_64-linux.tar.gz",
+      "sha256": "195ddc94f9bc89f45abdabb0b9eea86023d727ba90eac8b35b80f2544fc30572",
+      "files": {
+        "bin/wasm-merge": "7b78c81c2e0b2952134bbcf3b8659c615f9abbcd92286a3f127446a4e7a339f9",
+        "bin/wasm-metadce": "e7539f1a4357ff6e87a682fab07b8c224516e29cff591864beec904903c11c31",
+        "bin/wasm-opt": "1014958e6f20d412f1542320b43970214b0fb1ed780595e8f7c0d8761ed53725"
+      }
+    },
+    "aarch64-apple-darwin": {
+      "archive": "binaryen-version_132-arm64-macos.tar.gz",
+      "sha256": "98aad827847af7ef990ed7098d885725c8e5b5aae75073403635617ae4e259aa",
+      "files": {
+        "bin/wasm-merge": "c52a74b43e2b9fb3d5b8af74c955406d0aab97694172d3981d78768a973a3162",
+        "bin/wasm-metadce": "69243feb90732e893f64fff20dddfd0fb89112e9bebaef196f58614e95342ce1",
+        "bin/wasm-opt": "a9c8d09d84186e4c8efe937f3de19b887404d24a96e2638f3bd3b476e17b7218",
+        "lib/libbinaryen.dylib": "6627f4f3f3655bfc14b3cd4816b0e7b0cb62ce6a530bab00cdd26855d5f6359b"
+      }
+    },
+    "x86_64-apple-darwin": {
+      "archive": "binaryen-version_132-x86_64-macos.tar.gz",
+      "sha256": "40c3de90bb3766bd0282a895e139a6f50253dba49b4f5bb89e66faca162d832e",
+      "files": {
+        "bin/wasm-merge": "32a62f12d608aebd73721cf0aad8b089fcef19b3148cd7a6f1ed00f6e716cde0",
+        "bin/wasm-metadce": "ac590536b8f30b12c59b4a40c9d0b73bf2177fe3add083e2406d492265dc75a1",
+        "bin/wasm-opt": "c3cbd288eef3402119d8183df1739887ff0e6430caba2e1c801406df725a2bd3",
+        "lib/libbinaryen.dylib": "f6d540a50c12af1769c10e30775625f70b65327ff8ee438c7059bc076147000a"
+      }
+    },
+    "x86_64-pc-windows-msvc": {
+      "archive": "binaryen-version_132-x86_64-windows.tar.gz",
+      "sha256": "2089428ec98c899b45ee5d00636ddd6e2da8636cc473ef50b165cc25793ef7cb",
+      "files": {
+        "bin/wasm-merge.exe": "284e7daca119d585238e37cfec8a6709ed6e17a8cad15568227e4ffcb4885924",
+        "bin/wasm-metadce.exe": "650406aa8cb23d798db8396faf2e1c14bea17649d9080a5f49c21417a6045bad",
+        "bin/wasm-opt.exe": "3d6f77c666cd540f2defb59c1d7dd6ed19090b1d72c239efeb960847077c9976"
+      }
+    }
+  }
+}

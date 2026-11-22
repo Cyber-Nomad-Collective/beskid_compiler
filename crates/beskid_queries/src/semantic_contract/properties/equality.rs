@@ -158,7 +158,7 @@ fn foundation_equatable(db: &dyn Db, site: AstNodeKey) -> Option<AstNodeKey> {
     declarations.next().is_none().then_some(AstNodeKey { unit, node, ..site })
 }
 
-pub(super) fn observation_property_value_identity(
+pub(in crate::semantic_contract) fn observation_property_value_identity(
     db: &dyn Db,
     site: AstNodeKey,
     declaration: AstNodeKey,

@@ -55,6 +55,7 @@ pub fn assemble_program_with_materializer(
     let generation = SyntaxGenerationId::allocate().ok_or(AssemblyError::GenerationExhausted)?;
     let roots = super::super::runtime_fixture::assembly_roots(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
+    let browser_sources = if options.browser_profile { super::browser_protocol::sources(plan, &roots) } else { Default::default() };
 
     let entry_canonical = entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf());
 
@@ -137,6 +138,8 @@ pub fn assemble_program_with_materializer(
                         fs::read_to_string(&path)
                             .map_err(|source| AssemblyError::Read { path: path.clone(), source })?
                     }
+                } else if let Some(source) = super::browser_protocol::selected_source(&browser_sources, &path) {
+                    source.to_owned()
                 } else {
                     match fs::read_to_string(&path) {
                         Ok(source) => source,
@@ -247,6 +250,8 @@ pub fn assemble_program_with_materializer(
                 // is read from disk like every other unit. It is never assumed empty.
                 let source = if let Some(entry_text) = entry_source.filter(|_| is_entry) {
                     entry_text.to_string()
+                } else if let Some(source) = super::browser_protocol::selected_source(&browser_sources, path) {
+                    source.to_owned()
                 } else {
                     match fs::read_to_string(path) {
                         Ok(text) => text,
@@ -407,15 +412,32 @@ pub fn assemble_program_with_materializer(
 
     let module_index = Arc::new(ModuleIndex::build(&units, &syntax_indexes, &roots, plan));
 
-    let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, &roots, &units);
+    let trusted_corelib_service_paths = if browser_sources.is_empty() {
+        trusted_corelib_service_paths(plan, &roots, &units)
+    } else {
+        let mut trusted = trusted_corelib_service_paths(plan, &roots, &units).to_vec();
+        trusted.extend(units.iter().filter_map(|unit| {
+            (super::browser_protocol::selected_source(&browser_sources, &unit.origin_path) == Some(unit.source.as_str()))
+                .then(|| unit.origin_path.clone())
+        }));
+        trusted.sort();
+        trusted.dedup();
+        Arc::from(trusted)
+    };
     let glue_libraries = manifest_glue_libraries(plan)?;
+    let mut verified_package_identities = workspace
+        .map(|workspace| workspace.package_identities().clone())
+        .unwrap_or_default();
+    if workspace.is_some() {
+        verified_package_identities
+            .select_browser_sources(&browser_sources)
+            .map_err(|error| AssemblyError::BrowserSources { message: error.to_string() })?;
+    }
 
     super::super::runtime_fixture::attach_runtime_fixture(
         ProgramAssembly {
             compiled_mod_metadata: Vec::new(),
-            verified_package_identities: workspace
-                .map(|workspace| workspace.package_identities().clone())
-                .unwrap_or_default(),
+            verified_package_identities,
             runtime_fixture: None,
             roots,
             units: Arc::new(units),

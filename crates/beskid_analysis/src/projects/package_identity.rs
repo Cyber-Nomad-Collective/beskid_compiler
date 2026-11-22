@@ -1,5 +1,6 @@
 //! Preparation-issued package provenance. Empty synthetic proofs grant no stable identity.
 use super::{ProjectError, ProjectLockDependencyEntry, ProjectLockSource, ProjectWorkspacePlan};
+use beskid_abi::runtime_source::browser_protocol::Source as BrowserSource;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -82,6 +83,7 @@ pub struct VerifiedPackageIdentities {
     entries: Vec<VerifiedPackageRoot>,
     lock: Option<(PathBuf, Vec<u8>)>,
     configured_corelib_workspace: Option<PathBuf>,
+    browser_sources: BTreeMap<PathBuf, &'static str>,
 }
 fn error(message: impl Into<String>) -> ProjectError {
     ProjectError::Validation(message.into())
@@ -285,13 +287,53 @@ impl VerifiedPackageIdentities {
         };
         let path = path.canonicalize().map_err(|e| error(e.to_string()))?;
         let relative = entry.owned_relative(&path).ok_or_else(|| error("source outside package proof"))?;
-        if entry.files.get(relative).map(Vec::as_slice) != Some(source.as_bytes()) {
+        let expected = self.browser_sources.get(&path).map(|variant| variant.as_bytes())
+            .or_else(|| entry.files.get(relative).map(Vec::as_slice));
+        if expected != Some(source.as_bytes()) {
             return Err(error(format!(
                 "package proof differs from registered source snapshot for {} (bytes differ)",
                 relative.display()
             )));
         }
         Ok(Some(&entry.identity))
+    }
+    /// Keep the physical package proof unchanged and attest the compiler-selected source
+    /// at its exact materialized path. The selected bytes participate in the target's
+    /// semantic package identity.
+    pub(crate) fn select_browser_sources(
+        &mut self,
+        sources: &BTreeMap<PathBuf, &'static BrowserSource>,
+    ) -> Result<(), ProjectError> {
+        for (path, source) in sources {
+            let path = path.canonicalize().map_err(|e| error(e.to_string()))?;
+            let Some(entry) = self.for_source(&path) else {
+                return Err(error(format!("browser source {} is outside the package proof", path.display())));
+            };
+            let relative = Path::new(source.logical_path);
+            if entry.identity.package_name != format!("corelib_{}", source.package)
+                || entry.owned_relative(&path) != Some(relative)
+                || entry.files.get(relative).map(Vec::as_slice) != Some(source.native.as_bytes())
+                || !beskid_abi::runtime_source::browser_protocol::SOURCES
+                    .iter().any(|known| known.logical_path == source.logical_path && known.package == source.package
+                        && known.native == source.native && known.browser == source.browser)
+                || self.browser_sources.contains_key(&path)
+            {
+                return Err(error(format!("browser source {} is not a verified Corelib variant", path.display())));
+            }
+            let index = self.entries.iter().position(|candidate| std::ptr::eq(candidate, entry))
+                .expect("package owner is an entry in its proof");
+            self.browser_sources.insert(path, source.browser);
+            let identity = &mut self.entries[index].identity;
+            let mut digest = Sha256::new();
+            digest.update(b"beskid.package.browser-source.v1\0");
+            digest.update(identity.source_digest.as_bytes());
+            digest.update((source.logical_path.len() as u64).to_be_bytes());
+            digest.update(source.logical_path.as_bytes());
+            digest.update((source.browser.len() as u64).to_be_bytes());
+            digest.update(source.browser.as_bytes());
+            identity.source_digest = format!("{:x}", digest.finalize());
+        }
+        Ok(())
     }
     pub(crate) fn prepare(
         plan: &ProjectWorkspacePlan,
@@ -307,9 +349,9 @@ impl VerifiedPackageIdentities {
         .and_then(|aggregate| aggregate.canonicalize().ok())
         .and_then(|aggregate| aggregate.parent().map(Path::to_path_buf));
         let mut result = Self {
-            entries: Vec::new(),
             lock: Some((lock_path.to_owned(), read(lock_path)?)),
             configured_corelib_workspace,
+            ..Self::default()
         };
         let host_in_corelib = is_inside_compiler_corelib_checkout(&plan.manifest_path)
             || is_inside_installed_corelib(plan.corelib_root.as_deref(), &plan.manifest_path);
@@ -411,6 +453,35 @@ impl VerifiedPackageIdentities {
             manifest_bytes,
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod browser_source_identity_tests {
+    use super::*;
+
+    #[test]
+    fn a_selected_browser_source_keeps_the_disk_proof_and_changes_the_semantic_identity() {
+        let source = beskid_abi::runtime_source::browser_protocol::SOURCES
+            .iter()
+            .find(|source| source.package == "web")
+            .expect("embedded browser Web client");
+        let root = beskid_abi::runtime_source::compiler_corelib_package_source_root(source.package)
+            .expect("compiler Corelib source root");
+        let path = root.join(source.logical_path);
+        let manifest = root.parent().expect("package root").join("corelib_web.bproj");
+        let mut browser = VerifiedPackageIdentities::default();
+        browser.issue(&manifest, vec![root], VerifiedPackageSource::Corelib, None).unwrap();
+        let native = browser.clone();
+        browser.select_browser_sources(&BTreeMap::from([(path.clone(), source)])).unwrap();
+        native.validate().unwrap();
+        browser.validate().unwrap();
+        let native_identity = native.validate_source(&path, source.native).unwrap().unwrap();
+        let browser_identity = browser.validate_source(&path, source.browser).unwrap().unwrap();
+        assert_ne!(native_identity.source_digest(), browser_identity.source_digest());
+        assert!(native.validate_source(&path, source.browser).is_err());
+        assert!(browser.validate_source(&path, source.native).is_err());
+        assert!(browser.validate_source(&path, "unverified text").is_err());
     }
 }
 

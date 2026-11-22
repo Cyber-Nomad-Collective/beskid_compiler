@@ -498,6 +498,7 @@ pub(crate) fn source_handle_box_plans(
             value: None,
             library: brand.library.clone(),
             plan: AggregateStaticPlan {
+                observer_slot: None,
                 literal: brand.declaration,
                 descriptor_symbol: format!("__beskid_glue_handle_{identity}_descriptor"),
                 pointer_map_symbol: format!("__beskid_glue_handle_{identity}_pointer_map"),
@@ -567,6 +568,7 @@ fn value_box_plan(
                     reader: metadata.reader,
                 }),
                 plan: AggregateStaticPlan {
+                    observer_slot: None,
                     literal: record.declaration,
                     descriptor_symbol: format!("__beskid_glue_record_{identity}_descriptor"),
                     pointer_map_symbol: format!("__beskid_glue_record_{identity}_pointer_map"),
@@ -621,6 +623,7 @@ fn value_box_plan(
                     reader: metadata.reader,
                 }),
                 plan: AggregateStaticPlan {
+                    observer_slot: None,
                     literal: enumeration.declaration,
                     descriptor_symbol: format!("__beskid_glue_enum_{identity}_descriptor"),
                     pointer_map_symbol: format!("__beskid_glue_enum_{identity}_pointer_map"),

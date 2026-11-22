@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::commands::syntax_codegen::{lower_prepared_entrypoint, lower_prepared_module};
+use crate::commands::syntax_codegen::{lower_browser_export, lower_prepared_entrypoint, lower_prepared_module};
 use crate::machine_output::Records;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
@@ -58,6 +58,14 @@ pub struct BuildArgs {
     /// Build profile
     #[arg(long)]
     pub release: bool,
+
+    /// Build a browser WebAssembly GC module and its beskid.js host.
+    #[arg(long, conflicts_with = "target_triple")]
+    pub wasm: bool,
+
+    /// Include a source map in an optimized browser build. Debug browser builds include one by default.
+    #[arg(long)]
+    pub source_map: bool,
 
     /// Target triple override (e.g. x86_64-unknown-linux-gnu)
     #[arg(long)]
@@ -118,6 +126,12 @@ pub struct BuildArgs {
     pub json: bool,
 }
 
+impl BuildArgs {
+    fn browser_target(&self) -> bool {
+        self.wasm || self.target_triple.as_deref() == Some("wasm32-unknown-unknown")
+    }
+}
+
 /// Backend selected for one `beskid build` invocation, after flag validation.
 enum SelectedBackend {
     Clif,
@@ -166,6 +180,10 @@ fn select_backend(args: &BuildArgs) -> Result<SelectedBackend> {
             Ok(SelectedBackend::Clif)
         }
         BackendKind::RustSource => {
+            anyhow::ensure!(
+                !args.browser_target() && !args.source_map,
+                "browser Wasm and source maps require the clif backend"
+            );
             glue_rust::reject_inapplicable_flags(args)?;
             Ok(SelectedBackend::GlueRust(glue_rust::select_tools(
                 args.rust_toolchain.as_deref(),
@@ -208,10 +226,14 @@ fn default_output_path(
 }
 
 fn run_build(args: BuildArgs, records: Option<&Records>) -> Result<serde_json::Value> {
+    let browser_profile = args.browser_target();
+    anyhow::ensure!(!args.source_map || browser_profile, "--source-map requires a browser Wasm target");
     let resolve_args = resolve_input_args(&args);
     let (mut session, resolved) =
         CommandSession::open_and_resolve(args.plain, PipelineProgressKind::FullBuild, &resolve_args)?;
-    if let Some(plan) = resolved.compile_plan.as_ref() {
+    // Standalone sources have a compile plan for the installed Core dependency
+    // but no on-disk project manifest and consequently no declared Glue owners.
+    if resolved.prepared_workspace.is_some() && let Some(plan) = resolved.compile_plan.as_ref() {
         let manifest = load_manifest_from_path(&plan.manifest_path)?;
         if !manifest.glue.is_empty() {
             let labels = manifest.glue.iter().map(|owner| format!("`{}`", owner.library)).collect::<Vec<_>>();
@@ -227,9 +249,10 @@ fn run_build(args: BuildArgs, records: Option<&Records>) -> Result<serde_json::V
         args.lockfile.workspace_options(),
         Some(session.observer()),
     )?);
-    let gated = session.executable_gate_prepared(
+    let gated = session.executable_gate_for_profile(
         &resolved,
         SemanticGateOptions { finish_prepare_ui: false, prepare_message: "Analysis complete" },
+        browser_profile,
     );
     emit_gate_diagnostics(&session, records)?;
     let front = gated?.into_executable()?;
@@ -238,6 +261,43 @@ fn run_build(args: BuildArgs, records: Option<&Records>) -> Result<serde_json::V
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
     let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
+    if browser_profile {
+        anyhow::ensure!(
+            output_kind == BuildOutputKind::Exe
+                && args.export_symbols.is_empty()
+                && args.object_output.is_none()
+                && !args.prefer_static
+                && !args.prefer_dynamic
+                && !args.verbose_link,
+            "browser output currently supports a single entrypoint and no native linking options"
+        );
+        // Shared ISLE lowering uses the 64-bit ABI layout consumed by the managed adapter.
+        let artifact = lower_browser_export(&front, &entrypoint, Some(session.observer()))?;
+        let output = args.output.unwrap_or_else(|| {
+            if let Some(plan) = &resolved.compile_plan {
+                return plan.project_root.join(format!("{}.wasm", plan.target.name));
+            }
+            resolved.source_path.with_extension("wasm")
+        });
+        beskid_wasm::build(artifact, &entrypoint, &output, args.release, !args.release || args.source_map)?;
+        let host = output.with_file_name("beskid.js");
+        session.pipeline().finish_build_with_summary(
+            "Build complete",
+            CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
+        );
+        if records.is_none() {
+            println!("  output   {}", output.display());
+            println!("  host     {}", host.display());
+        }
+        return Ok(serde_json::json!({
+            "backend": "clif",
+            "target": "wasm32-unknown-unknown",
+            "object": null,
+            "output": output,
+            "host": host,
+            "linkerInvocation": null,
+        }));
+    }
     let artifact = if output_kind == BuildOutputKind::Exe {
         lower_prepared_entrypoint(&front, &entrypoint, args.target_triple.as_deref(), Some(session.observer()))?
     } else {

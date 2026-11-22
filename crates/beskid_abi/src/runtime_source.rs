@@ -4,6 +4,7 @@
 //! returned token only for AST nodes from the exact embedded source corpus.
 
 mod capabilities;
+pub mod browser_protocol;
 mod corelib_services;
 mod fixtures;
 mod kits;

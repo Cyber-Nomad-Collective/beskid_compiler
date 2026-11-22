@@ -137,6 +137,23 @@ pub fn lower_syntax_program(
     isa: &dyn TargetIsa,
     items: &[SyntaxModuleItem],
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
+    lower_syntax_program_with_source_types(input, isa, items, false)
+}
+
+pub(crate) fn lower_syntax_program_retaining_source_types(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[SyntaxModuleItem],
+) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
+    lower_syntax_program_with_source_types(input, isa, items, true)
+}
+
+fn lower_syntax_program_with_source_types(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[SyntaxModuleItem],
+    retain_source_types: bool,
+) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     let started = Instant::now();
     crate::isle_trace::event(|| format!("event=clif.begin items={} roots={}", items.len(), input.roots().len()));
     let db = input.database();
@@ -174,7 +191,7 @@ pub fn lower_syntax_program(
         crate::isle_trace::event(|| format!("event=isle.missing rule=legality_gate detail={error}"));
         return Err(error);
     }
-    let result = lower_resolved_syntax_program(input, isa, &items);
+    let result = lower_resolved_syntax_program(input, isa, &items, retain_source_types);
     crate::isle_trace::event(|| match &result {
         Ok(artifact) => format!(
             "event=clif.end outcome=ok elapsed_ms={} functions={} imports={}",
@@ -189,10 +206,30 @@ pub fn lower_syntax_program(
     result
 }
 
+/// Keep the source types for the actual emitted items, including materialized specializations.
+fn collect_source_signatures(
+    db: &dyn beskid_queries::Db,
+    items: &[ResolvedSyntaxModuleItem],
+) -> HashMap<String, beskid_queries::SourceItemSignature> {
+    use beskid_queries::{source_item_signature, source_specialized_item_signature};
+
+    items
+        .iter()
+        .filter_map(|item| {
+            let signature = match &item.specialization {
+                Some(instance) => source_specialized_item_signature(db, instance),
+                None => source_item_signature(db, item.key),
+            };
+            signature.ok().flatten().map(|signature| (item.symbol.clone(), signature))
+        })
+        .collect()
+}
+
 fn lower_resolved_syntax_program(
     input: &CodegenInput<'_>,
     isa: &dyn TargetIsa,
     items: &[ResolvedSyntaxModuleItem],
+    retain_source_types: bool,
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     // Final specialization and witness discovery determines which subscriptions can execute.
     // Allocation descriptors and writes must share this classification across emission workers.
@@ -230,10 +267,23 @@ fn lower_resolved_syntax_program(
         .and_then(|index| runtime_intrinsics.get(&DirectCallee::runtime_intrinsic(index)))
         .cloned();
     symbols.extend(runtime_intrinsics.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
-    let corelib_services = corelib_service_symbols(input, items)
+    let (corelib_services, browser_coverage) = corelib_service_symbols(input, items, retain_source_types)
         .map_err(|error| emission_verification(format!("Corelib import preflight: {error}")))?;
     symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let extern_contracts = extern_contract_callees(input, items);
+    let corelib_service_symbols = if retain_source_types {
+        for import in &extern_contracts.imports {
+            if beskid_abi::is_runtime_owned_ffi_symbol(&import.symbol) {
+                return Err(emission_verification(format!(
+                    "extern {} conflicts with a runtime-owned browser service",
+                    import.symbol
+                )));
+            }
+        }
+        corelib_services.values().cloned().collect()
+    } else {
+        HashSet::new()
+    };
     symbols.extend(extern_contracts.symbols.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
 
     let trampolines = resolve_spawn_trampolines(input, isa, items, &symbols)?;
@@ -347,8 +397,8 @@ fn lower_resolved_syntax_program(
                 [parameter] => Some(parameter.value_type),
                 _ => return Err(emission_verification("spawned lambda entry has multiple ABI return values")),
             };
+            let mut importer = ArtifactCallImporter::new(&symbols, retain_source_types);
             let function = {
-                let mut importer = ArtifactCallImporter { symbols: &symbols };
                 if let Some(captures) = &trampoline.closure_captures {
                     emit_isle_closure_lambda_entry(input, isa, body, result, captures, &mut importer)
                         .map_err(|error| emission_error(input, error))?
@@ -357,6 +407,7 @@ fn lower_resolved_syntax_program(
                         .map_err(|error| emission_error(input, error))?
                 }
             };
+            importer.retain_calls(input.database(), &trampoline.target_symbol, None, &mut context);
 
             functions.push(crate::LoweredFunction { name: trampoline.target_symbol.clone(), function });
         }
@@ -367,8 +418,8 @@ fn lower_resolved_syntax_program(
             [parameter] => Some(parameter.value_type),
             _ => return Err(emission_verification("lambda entry has multiple ABI return values")),
         };
+        let mut importer = ArtifactCallImporter::new(&symbols, retain_source_types);
         let function = {
-            let mut importer = ArtifactCallImporter { symbols: &symbols };
             let mut strings = ArtifactStringInterner { context: &mut context, pointer_type: isa.pointer_type() };
             emit_isle_lambda_entry(
                 input,
@@ -383,10 +434,11 @@ fn lower_resolved_syntax_program(
             )
             .map_err(|error| emission_error(input, error))?
         };
+        importer.retain_calls(input.database(), &trampoline.symbol, trampoline.specialization.as_ref(), &mut context);
 
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }
-    let item_functions = super::parallel::emit_module_items(input, isa, items, &symbols, &mut context)?;
+    let item_functions = super::parallel::emit_module_items(input, isa, items, &symbols, &mut context, retain_source_types)?;
 
     let mut runtime_checkpoint_definitions = RuntimeCheckpointDefinitions::default();
     for item in items {
@@ -537,7 +589,8 @@ fn lower_resolved_syntax_program(
         &mut context,
     )?;
 
-    let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
+    let (closure_static_plans, closure_environment_requests, closure_capture_types) =
+        collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines, retain_source_types);
     let event_handler_wrapper_required = event_handler_wrapper_required(input, items);
     if !closure_static_plans.is_empty() {
         for symbol in [ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_CAPTURE_STORE] {
@@ -551,7 +604,43 @@ fn lower_resolved_syntax_program(
             }
         }
     }
-    let mut aggregate_static_plans = collect_aggregate_static_plans(input, items);
+    let mut source_signatures = if retain_source_types {
+        collect_source_signatures(input.database(), items)
+    } else {
+        HashMap::new()
+    };
+    if retain_source_types {
+        let db = input.database();
+        let entries = lambda_trampolines.iter().map(|entry| (&entry.symbol, entry.lambda, entry.specialization.as_ref()))
+            .chain(trampolines.iter().filter_map(|entry| {
+                entry.lambda_body?;
+                let lambda = beskid_queries::spawn_entry_validation(db, entry.spawn).ok().flatten()?.target;
+                Some((&entry.target_symbol, lambda, None))
+            }));
+        for (symbol, lambda, specialization) in entries {
+            if let Ok(Some(signature)) = beskid_queries::source_lambda_signature(db, lambda, specialization) {
+                source_signatures.insert(symbol.clone(), signature);
+            }
+        }
+    }
+    let (array_static_plans, array_source_elements) = collect_array_static_plans(input, items, retain_source_types);
+    let mut ordered_signatures = source_signatures.iter().map(|(symbol, signature)| ((symbol, None), signature))
+        .chain(context.closure_call_signatures.iter().flat_map(|(symbol, calls)| {
+            calls.iter().map(move |(&inst, signature)| ((symbol, Some(inst)), signature))
+        })).collect::<Vec<_>>();
+    ordered_signatures.sort_unstable_by_key(|(key, _)| *key);
+    let signature_types = ordered_signatures.into_iter().flat_map(|(_, signature)| {
+        signature.parameters.iter().chain(std::iter::once(&signature.result))
+    });
+    let mut ordered_contract_results = context.contract_call_results.iter().flat_map(|(symbol, calls)| {
+        calls.iter().map(move |(&inst, result)| ((symbol, inst), result))
+    }).collect::<Vec<_>>();
+    ordered_contract_results.sort_unstable_by_key(|(key, _)| *key);
+    let contract_results = ordered_contract_results.into_iter().map(|(_, result)| result);
+    let element_types = array_static_plans.iter().filter_map(|plan| array_source_elements.get(&plan.allocation_request_symbol));
+    let (mut aggregate_static_plans, mut aggregate_source_types) = collect_aggregate_static_plans(
+        input, items, retain_source_types, signature_types.chain(element_types).chain(contract_results),
+    )?;
     for binding in input.glue_handle_bindings() {
         for handle in crate::glue::handles::source_handle_box_plans(input, *binding)
             .map_err(|error| emission_verification(error.to_string()))?
@@ -565,36 +654,6 @@ fn lower_resolved_syntax_program(
                 }
             } else {
                 aggregate_static_plans.push(handle.plan);
-            }
-        }
-    }
-
-    for instance in items.iter().filter_map(|item| item.specialization.as_ref()) {
-        let shape = beskid_queries::dynamic_shape_binding(input.database(), instance)
-            .map_err(|error| emission_verification(error.to_string()))?;
-        let unpack = beskid_queries::dynamic_unpacking_bridge(input.database(), instance)
-            .map_err(|error| emission_verification(error.to_string()))?;
-        let mapping = beskid_queries::dynamic_mapping_binding(input.database(), instance)
-            .map_err(|error| emission_verification(error.to_string()))?;
-        let mut packings = shape
-            .as_ref()
-            .map(|binding| binding.packing())
-            .or_else(|| unpack.as_ref().map(|bridge| bridge.packing()))
-            .into_iter()
-            .cloned()
-            .collect::<Vec<_>>();
-        if let Some(mapping) = &mapping {
-            packings.extend([mapping.source().clone(), mapping.destination().clone()]);
-        }
-        for packing in &packings {
-            let bridge = beskid_queries::dynamic_packing_bridge(input.database(), packing)
-                .map_err(|error| emission_verification(error.to_string()))?
-                .ok_or_else(|| emission_verification("Shape lacks canonical Pack box authority"))?;
-            let plan = input
-                .aggregate_static_plan_for_specialization(bridge.box_literal(), Some(packing))
-                .ok_or_else(|| emission_verification("Shape lacks concrete source descriptor"))?;
-            if !aggregate_static_plans.iter().any(|existing| existing == &plan) {
-                aggregate_static_plans.push(plan);
             }
         }
     }
@@ -625,6 +684,34 @@ fn lower_resolved_syntax_program(
             optional: false,
         });
     }
+    let spawn_artifacts = if retain_source_types {
+            trampolines.iter().map(|trampoline| {
+                let handle = input.spawn_handle_static_plan(trampoline.spawn).ok_or_else(|| emission_verification("source Fiber handle layout unavailable"))?;
+                let handle_type = beskid_queries::source_spawn_handle_type(input.database(), trampoline.spawn)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                    .ok_or_else(|| emission_verification("source Fiber handle type unavailable"))?;
+                Ok(crate::artifact::SpawnArtifact {
+                    trampoline: trampoline.symbol.clone(),
+                    target: trampoline.target_symbol.clone(),
+                    lambda: if trampoline.lambda_body.is_some() {
+                        Some(beskid_queries::spawn_entry_validation(input.database(), trampoline.spawn)
+                            .map_err(|error| emission_verification(error.to_string()))?
+                            .ok_or_else(|| emission_verification("spawn lambda identity unavailable"))?.target)
+                    } else { None },
+                    handle_request: handle.allocation_request_symbol,
+                    result_request: trampoline.result_plan.allocation_request_symbol.clone(),
+                    argument_request: trampoline.argument_plan.as_ref().map(|plan| plan.allocation_request_symbol.clone()),
+                    handle_type,
+                })
+            }).collect::<Result<Vec<_>, SyntaxModuleEmissionError>>()?
+    } else { Vec::new() };
+    for spawn in &spawn_artifacts {
+        let fields = beskid_queries::source_record_fields(input.database(), &spawn.handle_type)
+            .map_err(|error| emission_verification(error.to_string()))?
+            .ok_or_else(|| emission_verification("source Fiber fields unavailable"))?;
+        aggregate_source_types.declarations.insert(spawn.handle_request.clone(), spawn.handle_type.clone());
+        aggregate_source_types.fields.insert(spawn.handle_type.clone(), fields);
+    }
     aggregate_static_plans.extend(trampolines.iter().map(|trampoline| trampoline.result_plan.clone()));
     aggregate_static_plans.extend(isolate_trampolines.iter().map(|trampoline| trampoline.result_plan.clone()));
     aggregate_static_plans.extend(trampolines.iter().filter_map(|trampoline| trampoline.argument_plan.clone()));
@@ -645,8 +732,7 @@ fn lower_resolved_syntax_program(
             optional: false,
         });
     }
-    let array_static_plans = collect_array_static_plans(input, items);
-    let array_helpers = ["beskid_rt_v5_array_allocate", "beskid_rt_v5_array_grow"];
+    let array_helpers = ["beskid_rt_v5_array_allocate", "beskid_rt_v5_array_grow", "beskid_rt_v5_array_write_barrier"];
     let references = |symbol: &str| {
         let name = cranelift_codegen::ir::ExternalName::testcase(symbol);
         functions.iter().any(|function| function.function.dfg.ext_funcs.values().any(|callee| callee.name == name))
@@ -680,6 +766,15 @@ fn lower_resolved_syntax_program(
     // the unboxing thunks of primitive receivers.
     let witnesses = super::contract_witnesses::collect_contract_witnesses(input, items, Some(isa))?;
     for thunk in &witnesses.thunks {
+        if retain_source_types {
+            // The thunk receives a packed receiver word, and shares the target's other source types.
+            let mut signature = source_signatures.get(&thunk.target_symbol).cloned()
+                .ok_or_else(|| emission_verification(format!("missing source signature for witness target {}", thunk.target_symbol)))?;
+            let receiver = std::sync::Arc::make_mut(&mut signature.parameters).first_mut()
+                .ok_or_else(|| emission_verification("witness target has no receiver"))?;
+            *receiver = beskid_queries::SourceSignatureType::Scalar(beskid_queries::SemanticTypeId::I64);
+            source_signatures.insert(thunk.symbol.clone(), signature);
+        }
         let function = crate::contract_static::emit_witness_thunk(thunk, isa)
             .ok_or_else(|| emission_verification(format!("witness thunk `{}` has no ABI", thunk.symbol)))?;
         functions.push(crate::LoweredFunction { name: thunk.symbol.clone(), function });
@@ -698,17 +793,55 @@ fn lower_resolved_syntax_program(
     // must be, so functions are ordered by their unique symbol.
     functions.sort_by(|left, right| left.name.cmp(&right.name));
     verify_runtime_checkpoint_calls(&functions, &runtime_checkpoint_definitions)?;
+    let mut browser_event_layouts = HashMap::new();
+    if retain_source_types && ["event_subscribe", "event_unsubscribe_first", "event_len", "event_get_handler"]
+        .iter().any(|service| corelib_service_symbols.contains(*service))
+    {
+        let db = input.database();
+        let declarations: HashSet<_> = aggregate_source_types.fields.keys().map(|nominal| nominal.declaration).collect();
+        for declaration in declarations {
+            let fields = beskid_queries::child_nodes(db, declaration)
+                .map_err(|error| emission_verification(error.to_string()))?;
+            let mut events = Vec::new();
+            for &field in fields.as_deref().unwrap_or_default() {
+                if let Some(event) = beskid_queries::event_field_layout(db, field)
+                    .map_err(|error| emission_verification(error.to_string()))? {
+                    events.push(event);
+                }
+            }
+            if !events.is_empty() {
+                browser_event_layouts.insert(declaration, events);
+            }
+        }
+    }
     let mut artifact = CodegenArtifact {
         functions,
+        browser_dynamic: if retain_source_types { super::dynamic_browser::collect(input, items, &symbols)? } else { Default::default() },
+        browser_composition_hooks: if retain_source_types { super::composition_source::disposal_hooks(input, &symbols)? } else { None },
+        source_signatures,
+        aggregate_declarations: aggregate_source_types.declarations,
+        referenced_record_layouts: aggregate_source_types.referenced_layouts,
+        aggregate_source_fields: aggregate_source_types.fields,
+        array_source_elements,
         string_literals: context.string_literals,
         extern_imports,
+        corelib_service_symbols,
+        browser_coverage,
         trusted_extern_imports,
         runtime_checkpoint_definitions,
+        closure_environment_requests,
+        callable_sites: context.callable_sites,
+        closure_call_signatures: context.closure_call_signatures,
+        contract_call_results: context.contract_call_results,
+        closure_capture_types,
+        spawn_artifacts,
         closure_static_plans,
         event_handler_wrapper_required,
+        browser_event_layouts,
         aggregate_static_plans,
         array_static_plans,
         contract_boxes_required: witnesses.boxes_required,
+        source_contracts: aggregate_source_types.contracts,
         witness_tables: witnesses.tables,
         ..CodegenArtifact::default()
     };
@@ -781,7 +914,7 @@ pub fn emit_syntax_program<M: Module>(
     linkage: Linkage,
 ) -> Result<HashMap<DirectCallee, FuncId>, SyntaxModuleEmissionError> {
     let items = expand_direct_spawn_items(input, resolve_module_items(input, items)?)?;
-    let artifact = lower_resolved_syntax_program(input, isa, &items)?;
+    let artifact = lower_resolved_syntax_program(input, isa, &items, false)?;
     super::data::declare_runtime_data_imports(module, &artifact)?;
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;

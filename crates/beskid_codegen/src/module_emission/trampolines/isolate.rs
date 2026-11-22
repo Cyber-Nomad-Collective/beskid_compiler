@@ -105,6 +105,7 @@ pub(in crate::module_emission) fn resolve_isolate_entry_trampolines(
             };
             let symbol = isolate_entry_symbol(result, managed);
             let result_plan = AggregateStaticPlan {
+                observer_slot: None,
                 descriptor_flags: 0,
                 descriptor_getter: None,
                 literal: call,

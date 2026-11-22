@@ -114,6 +114,8 @@ pub const CLIF_ALLOWED_OPCODES: &[&str] = &[
     "fmin",
     "fmax",
     "sqrt",
+    "floor",
+    "ceil",
     "fcmp",
     "fcvt_from_sint",
     "fcvt_from_uint",

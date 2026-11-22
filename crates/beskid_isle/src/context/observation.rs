@@ -8,6 +8,7 @@ use super::*;
 use crate::facts::{ObservationEquality, ObservedDerived, ObservedStore};
 
 struct ObservedChange {
+    callback: CallableSite,
     property_id: u64,
     previous: Value,
     next: Value,
@@ -99,7 +100,13 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.builder.switch_to_block(changed);
                 self.builder.seal_block(changed);
             }
-            changes.push(ObservedChange { property_id: property.property_id, previous, next: value, changed: None });
+            changes.push(ObservedChange {
+                callback: CallableSite::Observer { site: key, property: property.declaration, receiver: plan.receiver },
+                property_id: property.property_id,
+                previous,
+                next: value,
+                changed: None,
+            });
         }
         let capture = self.builder.create_block();
         let empty = if plan.derived.is_empty() {
@@ -149,6 +156,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 let changed =
                     self.compare_observed_getter(key, &getter.property.equality, subscribed, previous, next)?;
                 changes.push(ObservedChange {
+                    callback: CallableSite::Observer { site: key, property: getter.property.declaration, receiver: plan.receiver },
                     property_id: getter.property.property_id,
                     previous,
                     next,
@@ -311,7 +319,7 @@ impl IsleContext<'_, '_, '_, '_> {
             let callback_root = self.root_expression_value(callback)?;
             let ty = self.builder.func.dfg.value_type(change.previous);
             let _result =
-                self.call_closure_record(callback, (16, 24), &[ty, ty], &[change.previous, change.next], None);
+                self.call_closure_record(Some(change.callback), callback, (16, 24), &[ty, ty], &[change.previous, change.next], None);
             self.guard_checked_allocation()?;
             self.release_expression_root(Some(callback_root))?;
             self.builder.ins().jump(advance, &[]);

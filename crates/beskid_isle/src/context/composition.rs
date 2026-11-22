@@ -237,6 +237,20 @@ impl IsleContext<'_, '_, '_, '_> {
         for call in calls.iter().rev() {
             let arguments = self.composition_hook_arguments(call, slots)?;
             (arguments.len() <= crate::COMPOSITION_HOOK_ARGUMENTS_MAX).then_some(())?;
+            if let Some(id) = call.browser_disposal_id {
+                let id = self.builder.ins().iconst(pointer, i64::from(id));
+                let count = self.builder.ins().iconst(pointer, i64::try_from(arguments.len()).ok()?);
+                let mut params = vec![container, id, count];
+                params.extend(arguments);
+                while params.len() < 3 + crate::COMPOSITION_HOOK_ARGUMENTS_MAX {
+                    params.push(self.builder.ins().iconst(pointer, 0));
+                }
+                self.composition_call(
+                    site, "composition_exit_register", &params,
+                    &[pointer; 3 + crate::COMPOSITION_HOOK_ARGUMENTS_MAX], None,
+                )?;
+                continue;
+            }
             let function = self.import_composition_hook(site, call)?;
             let address = self.builder.ins().func_addr(pointer, function);
             let array = self.builder.create_sized_stack_slot(StackSlotData::new(

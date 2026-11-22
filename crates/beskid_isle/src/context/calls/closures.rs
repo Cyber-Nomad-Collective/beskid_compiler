@@ -103,6 +103,7 @@ impl IsleContext<'_, '_, '_, '_> {
             arguments.push(value);
         }
         let result = self.call_closure_record(
+            Some(CallableSite::Closure(key)),
             record,
             (plan.code_offset, plan.environment_offset),
             &plan.parameters,
@@ -119,6 +120,7 @@ impl IsleContext<'_, '_, '_, '_> {
     /// Invoke a rooted closure record after coercing the arguments to the lifted signature.
     pub(in crate::context) fn call_closure_record(
         &mut self,
+        site: Option<CallableSite>,
         record: Value,
         offsets: (i32, i32),
         parameters: &[Type],
@@ -148,6 +150,7 @@ impl IsleContext<'_, '_, '_, '_> {
         plain_signature.returns.extend(result.map(AbiParam::new));
         let plain_signature = self.builder.func.import_signature(plain_signature);
         let plain_call = self.builder.ins().call_indirect(plain_signature, code, arguments);
+        if let Some(site) = site { self.record_callable_site(plain_call, site); }
         let plain_results: Vec<BlockArg> =
             self.builder.inst_results(plain_call).iter().copied().map(BlockArg::Value).collect();
         self.builder.ins().jump(merge, &plain_results);
@@ -163,6 +166,7 @@ impl IsleContext<'_, '_, '_, '_> {
         closure_arguments.push(environment);
         closure_arguments.extend(arguments.iter().copied());
         let closure_call = self.builder.ins().call_indirect(closure_signature, code, &closure_arguments);
+        if let Some(site) = site { self.record_callable_site(closure_call, site); }
         let closure_results: Vec<BlockArg> =
             self.builder.inst_results(closure_call).iter().copied().map(BlockArg::Value).collect();
         self.builder.ins().jump(merge, &closure_results);

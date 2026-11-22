@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TargetMetadata},
     runtime_provenance::RuntimeProvenanceAudit,
@@ -149,6 +149,7 @@ impl PreparedSyntaxModule {
 pub enum EntrypointKind {
     /// A function (`Main`, an exported entry).
     Function,
+    BrowserExport,
     /// A `test` definition (the native test runner).
     Test,
 }
@@ -156,6 +157,7 @@ pub enum EntrypointKind {
 impl EntrypointKind {
     fn matches(self, kind: Option<beskid_queries::IndexedNodeKind>) -> bool {
         match self {
+            Self::BrowserExport => matches!(kind, Some(beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::TestDefinition)),
             Self::Function => kind == Some(beskid_queries::IndexedNodeKind::FunctionDefinition),
             Self::Test => kind == Some(beskid_queries::IndexedNodeKind::TestDefinition),
         }
@@ -163,7 +165,7 @@ impl EntrypointKind {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Function => "entrypoint",
+            Self::Function | Self::BrowserExport => "entrypoint",
             Self::Test => "test",
         }
     }
@@ -434,6 +436,10 @@ pub fn lower_syntax_assembly_test_entrypoint(
     lower_syntax_assembly_entrypoint_with_composition(db, assembly, test, EntrypointKind::Test, target, isa, None)
 }
 
+pub fn lower_prepared_syntax_export(db: &mut BeskidDatabase, front: &ExecutableFrontEnd, entrypoint: &str, target: TargetMetadata, isa: &dyn TargetIsa) -> Result<PreparedSyntaxEntrypoint> {
+    lower_syntax_assembly_entrypoint_with_composition(db, Arc::new(front.syntax_assembly()), entrypoint, EntrypointKind::BrowserExport, target, isa, Some(front))
+}
+
 fn lower_syntax_assembly_entrypoint_with_composition(
     db: &mut BeskidDatabase,
     assembly: Arc<ProgramAssembly>,
@@ -512,6 +518,9 @@ fn lower_syntax_assembly_entrypoints_with_composition(
     } else {
         input
     };
+    let mut input = input;
+    let browser = kind == EntrypointKind::BrowserExport;
+    input.browser_profile = browser;
     let entry_root =
         AstNodeKey { unit: SourceUnitId::new(db, entry_path), generation, node: beskid_queries::AstNodeId(0) };
     let mut selected = HashSet::new();
@@ -534,7 +543,7 @@ fn lower_syntax_assembly_entrypoints_with_composition(
         let signature = item_abi_signature(db, entry)
             .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
             .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
-        if !signature.parameters.is_empty() {
+        if !browser && !signature.parameters.is_empty() {
             anyhow::bail!("Entrypoint `{entrypoint}` must take no parameters");
         }
         let reachable = reachable_items(db, entry_root, entry)
@@ -551,11 +560,35 @@ fn lower_syntax_assembly_entrypoints_with_composition(
             .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
         entries.push(PreparedSyntaxEntry { name: entrypoint.clone(), symbol, return_type: signature.result });
     }
+    let mut browser_exports = std::collections::BTreeMap::new();
+    if browser {
+        for root in input.roots().iter().copied().filter(|root| {
+            root.unit == entry_root.unit || root.unit.path(db).starts_with(&assembly.roots.host.source_root)
+        }) {
+            for key in function_definitions(db, root) {
+                let Some(export) = item_export_symbol(db, key).map_err(|e| anyhow::anyhow!("{e}"))? else { continue };
+                let symbol = syntax_item_symbol(db, &input, key).ok_or_else(|| anyhow::anyhow!("missing browser export symbol"))?;
+                browser_exports.insert(symbol, export.0.to_string());
+                for dependency in reachable_items(db, root, key)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?
+                    .ok_or_else(|| anyhow::anyhow!("incomplete reachability for {}", export.0))?.iter().copied()
+                {
+                    if selected.insert(dependency) { items.push(SyntaxModuleItem { key: dependency, symbol: syntax_item_symbol(db, &input, dependency).ok_or_else(|| anyhow::anyhow!("missing reachable symbol"))? }); }
+                }
+            }
+        }
+    }
     close_composition_hook_reachability(input.database(), &input, &mut selected, &mut items)?;
     close_scheduler_entry_reachability(input.database(), &input, &mut selected, &mut items)?;
-    let mut artifact = lower_syntax_program(&input, isa, &items)
+    if browser { close_browser_dynamic_reachability(input.database(), &input, &mut selected, &mut items)?; }
+    let mut artifact = if browser { crate::module_emission::lower_syntax_program_retaining_source_types(&input, isa, &items) } else { lower_syntax_program(&input, isa, &items) }
         .map_err(|error| error.into_report(&input, "syntax ISLE lowering failed"))?;
-    artifact.exports = syntax_export_entries(db, &items)?;
+    if browser {
+        // Browser wrappers validate and carry managed values via per-instance references.
+        artifact.browser_exports = browser_exports;
+    } else {
+        artifact.exports = syntax_export_entries(db, &items)?;
+    }
     Ok(PreparedSyntaxEntrypoints { artifact, entries })
 }
 
@@ -889,6 +922,39 @@ pub(crate) fn close_composition_hook_reachability(
             items.push(SyntaxModuleItem { key, symbol });
         }
     }
+    Ok(())
+}
+
+fn close_browser_dynamic_reachability(
+    db: &dyn beskid_queries::Db,
+    input: &CodegenInput<'_>,
+    selected: &mut HashSet<AstNodeKey>,
+    items: &mut Vec<SyntaxModuleItem>,
+) -> Result<()> {
+    use crate::module_emission::dynamic_browser::required_factories;
+    let mut required = std::collections::BTreeSet::new();
+    for key in selected.iter().copied().filter(|key| beskid_queries::canonical_dynamic_source(db, *key)) {
+        if let Some(name) = item_name(db, key).map_err(|e| anyhow::anyhow!("{e}"))?
+            && let Some(factories) = required_factories(&name) {
+            required.extend(factories);
+            required.insert("PackedResultV1");
+        }
+    }
+    if required.is_empty() { return Ok(()); }
+    for root in input.roots().iter().copied().filter(|key| beskid_queries::canonical_dynamic_source(db, *key)) {
+        for key in function_definitions(db, root) {
+            let Some(name) = item_name(db, key).map_err(|e| anyhow::anyhow!("{e}"))? else { continue; };
+            if !required.remove(name.as_ref()) { continue; }
+            for dependency in reachable_items(db, root, key).map_err(|e| anyhow::anyhow!("{e}"))?
+                .context("incomplete Dynamic Result factory reachability")?.iter().copied() {
+                if selected.insert(dependency) {
+                    let symbol = syntax_item_symbol(db, input, dependency).context("Dynamic Result factory has no symbol")?;
+                    items.push(SyntaxModuleItem { key: dependency, symbol });
+                }
+            }
+        }
+    }
+    anyhow::ensure!(required.is_empty(), "canonical Dynamic Result factories unavailable: {required:?}");
     Ok(())
 }
 

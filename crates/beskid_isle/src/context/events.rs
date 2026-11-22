@@ -94,7 +94,8 @@ impl IsleContext<'_, '_, '_, '_> {
             .params
             .extend(arguments.iter().map(|value| AbiParam::new(self.builder.func.dfg.value_type(*value))));
         let plain_signature = self.builder.func.import_signature(plain_signature);
-        self.builder.ins().call_indirect(plain_signature, code, &arguments);
+        let invocation = self.builder.ins().call_indirect(plain_signature, code, &arguments);
+        self.record_callable_site(invocation, CallableSite::Event(key));
         self.builder.ins().jump(latch, &[]);
 
         self.builder.switch_to_block(captured);
@@ -107,7 +108,8 @@ impl IsleContext<'_, '_, '_, '_> {
         let mut closure_arguments = Vec::with_capacity(arguments.len() + 1);
         closure_arguments.push(environment);
         closure_arguments.extend(arguments.iter().copied());
-        self.builder.ins().call_indirect(closure_signature, code, &closure_arguments);
+        let invocation = self.builder.ins().call_indirect(closure_signature, code, &closure_arguments);
+        self.record_callable_site(invocation, CallableSite::Event(key));
         self.builder.ins().jump(latch, &[]);
 
         self.builder.switch_to_block(latch);
@@ -174,6 +176,8 @@ impl IsleContext<'_, '_, '_, '_> {
             }
         };
         let code = self.builder.ins().func_addr(pointer, entry);
+        let instruction = self.builder.func.dfg.value_def(code).unwrap_inst();
+        self.record_callable_site(instruction, CallableSite::ClosureCodeAddress(key));
 
         let (environment, environment_root) = if let Some(environment_plan) = environment {
             let (environment, root) = self.emit_inline_closure_environment(environment_plan)?;

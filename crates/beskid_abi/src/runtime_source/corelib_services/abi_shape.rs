@@ -36,6 +36,12 @@ pub fn canonical_corelib_service_abi(service: CorelibService) -> Option<CorelibS
 
 /// Resolve the unique canonical ABI-v5 shape for an already source-authorized adapter symbol.
 pub fn canonical_corelib_service_abi_for_adapter(symbol: &str) -> Option<CorelibServiceAbi> {
+    if let Some(operation) = crate::runtime_source::browser_protocol::operation(symbol) {
+        return Some(CorelibServiceAbi {
+            parameters: operation.parameters.iter().map(|ty| ty.corelib_abi()).collect(),
+            result: operation.result.corelib_abi(),
+        });
+    }
     let mut bindings = crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
         .iter()
         .filter(|binding| binding.adapter == symbol);

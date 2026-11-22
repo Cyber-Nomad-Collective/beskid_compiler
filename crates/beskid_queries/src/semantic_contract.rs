@@ -306,6 +306,7 @@ pub use model::{
     format_ast_node_site, format_ast_node_trace, format_source_span_range, generic_specialization_identity,
 };
 pub use queries::{
+    source_contract_property_value, source_observer_signature, SourceItemSignature, SourceNominalType, SourceSignatureType, source_contract_call_result, source_capture_type, source_spawn_handle_type, source_item_signature, source_record_fields, source_enum_variant_fields, source_aggregate_literal_type, source_array_element_type, source_specialized_item_signature,
     EntryItemResolutionError, abi_type, affine_ownership, aggregate_field_access, aggregate_layout,
     aggregate_literal_declaration, aggregate_literal_field_values, aggregate_literal_layout,
     array_index_element_abi_type, block_statement_nodes, bulk_call_element_abi_type, bulk_parameter,
@@ -329,12 +330,14 @@ pub use queries::{
 };
 
 pub use native_mod_transport::{native_mod_expression_payload, native_mod_single_array_element};
+pub use queries::{source_event_call_signature, source_function_value_signature, source_lambda_signature};
+pub use queries::source_injected_field_type;
 
 pub(crate) use contracts::{
     serialization_target_contract_methods, serialization_target_contract_methods_in_environment,
 };
 
-pub use checked_provider::{CheckedDynamicResultBridge, checked_dynamic_result_bridge};
+pub use checked_provider::{CheckedDynamicResultBridge, canonical_dynamic_source, checked_dynamic_result_bridge};
 
 pub(crate) use contracts::serialization_encoder_methods;
 

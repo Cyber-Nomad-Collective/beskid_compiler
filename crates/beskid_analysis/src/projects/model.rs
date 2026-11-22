@@ -357,6 +357,7 @@ pub struct AssemblyOptions {
     pub discovery: AssemblyDiscovery,
     pub recovery_policy: AssemblyRecoveryPolicy,
     pub max_units: usize,
+    pub browser_profile: bool,
     /// When true, skip units that fail to parse instead of failing the whole assembly (`beskid doc`).
     pub skip_parse_errors: bool,
     /// Native Mod builds only: seed discovery with the compiler-owned SDK adapter sources
@@ -376,6 +377,7 @@ impl Default for AssemblyOptions {
             discovery: AssemblyDiscovery::ImportClosure,
             recovery_policy: AssemblyRecoveryPolicy::Strict,
             max_units: 4096,
+            browser_profile: false,
             skip_parse_errors: false,
             native_mod_adapter_sources: false,
             worker_threads: None,

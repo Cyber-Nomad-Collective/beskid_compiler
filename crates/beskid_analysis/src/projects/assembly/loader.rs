@@ -1,5 +1,6 @@
 //! Discover, parse, and index compilation units for a compile plan.
 
+mod browser_protocol;
 mod discovery;
 mod options;
 mod orchestration;

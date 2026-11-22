@@ -2,7 +2,7 @@ use crate::abi_v5::{AbiManifestV5, canonical_runtime_package, canonical_source_h
 
 use super::super::capabilities::RuntimeCapabilityError;
 use super::super::sources::canonical_corelib_service_sources;
-use super::service_table::{CORELIB_SERVICES, CorelibService};
+use super::service_table::{CorelibService, corelib_services};
 
 /// Compiler-owned proof that a unit belongs to the embedded Corelib service corpus.
 ///
@@ -37,16 +37,15 @@ impl CorelibServiceCapability {
     pub fn service_for_source(&self, logical_path: &str, name: &str) -> Option<CorelibService> {
         self.authorizes_source(logical_path)
             .then(|| {
-                CORELIB_SERVICES
-                    .iter()
-                    .copied()
+                corelib_services()
                     .find(|service| service.name == name && service.source_path == logical_path)
             })
             .flatten()
     }
 
     pub fn services(&self) -> &'static [CorelibService] {
-        CORELIB_SERVICES
+        static SERVICES: std::sync::OnceLock<Vec<CorelibService>> = std::sync::OnceLock::new();
+        SERVICES.get_or_init(|| corelib_services().collect())
     }
 }
 
